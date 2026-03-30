@@ -14,4 +14,6 @@ export const router = createBrowserRouter([
       { path: "article/:id", Component: ArticleDetail },
     ],
   },
-]);
+], {
+  basename: '/finance-news-ai-digest/',
+});
