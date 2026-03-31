@@ -172,6 +172,66 @@ export async function getUserFeed(userId: string, limit: number = 20): Promise<A
   return allArticles;
 }
 
+export async function saveUserTickers(userId: string, tickers: string[]): Promise<void> {
+  // First delete existing tickers
+  const deleteResponse = await fetch(`${SUPABASE_URL}/rest/v1/user_tickers?user_id=eq.${userId}`, {
+    method: 'DELETE',
+    headers,
+  });
+
+  console.log('Delete tickers response:', deleteResponse.status);
+
+  // If no tickers to save, return early
+  if (tickers.length === 0) return;
+
+  // Insert new tickers
+  const rows = tickers.map(ticker => ({
+    user_id: userId,
+    ticker: ticker.toUpperCase().trim(),
+  }));
+
+  const response = await fetch(`${SUPABASE_URL}/rest/v1/user_tickers`, {
+    method: 'POST',
+    headers: {
+      ...headers,
+      'Prefer': 'return=minimal',
+    },
+    body: JSON.stringify(rows),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('Save tickers error:', response.status, errorText);
+    throw new Error(`Failed to save user tickers: ${response.status}`);
+  }
+
+  console.log('Saved tickers for user:', userId, 'tickers:', tickers);
+}
+
+export async function saveDigestSubscription(userId: string, email: string, frequency: 'daily' | 'weekly'): Promise<void> {
+  const response = await fetch(`${SUPABASE_URL}/rest/v1/digest_subscribers`, {
+    method: 'POST',
+    headers: {
+      ...headers,
+      'Prefer': 'return=minimal,resolution=merge-duplicates',
+    },
+    body: JSON.stringify({
+      user_id: userId,
+      email: email.toLowerCase().trim(),
+      frequency,
+      is_active: true,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('Save digest subscription error:', response.status, errorText);
+    throw new Error(`Failed to save digest subscription: ${response.status}`);
+  }
+
+  console.log('Saved digest subscription for user:', userId, 'email:', email, 'frequency:', frequency);
+}
+
 export async function getArticleDetail(articleId: string): Promise<ArticleDetail> {
   const response = await fetch(
     `${SUPABASE_URL}/rest/v1/ai_articles?id=eq.${articleId}&select=*`,
