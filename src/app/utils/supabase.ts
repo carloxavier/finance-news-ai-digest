@@ -209,7 +209,7 @@ export async function saveUserTickers(userId: string, tickers: string[]): Promis
 }
 
 export async function saveDigestSubscription(userId: string, email: string, frequency: 'daily' | 'weekly'): Promise<void> {
-  const response = await fetch(`${SUPABASE_URL}/rest/v1/digest_subscribers`, {
+  const response = await fetch(`${SUPABASE_URL}/rest/v1/digest_subscribers?on_conflict=email`, {
     method: 'POST',
     headers: {
       ...headers,
