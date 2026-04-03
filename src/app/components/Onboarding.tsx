@@ -113,7 +113,19 @@ export function Onboarding() {
   // --- Progress indicator ---
 
   const StepIndicator = () => (
-    <div className="flex items-center justify-center mb-12">
+    <div className="mb-12">
+      <div className="text-center mb-8">
+        <h1
+          className="text-3xl mb-2"
+          style={{ fontFamily: "var(--font-headline)" }}
+        >
+          Finance AI Digest
+        </h1>
+        <p className="text-white/50 text-sm">
+          AI-curated financial news, tailored to you
+        </p>
+      </div>
+      <div className="flex items-center justify-center">
       {([1, 2, 3] as Step[]).map((s, i) => (
         <div key={s} className="flex items-center">
           {i > 0 && <div className="w-12 h-px bg-white/20" />}
@@ -130,6 +142,7 @@ export function Onboarding() {
           </div>
         </div>
       ))}
+      </div>
     </div>
   );
 
