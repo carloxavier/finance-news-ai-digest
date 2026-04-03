@@ -232,6 +232,61 @@ export async function saveDigestSubscription(userId: string, email: string, freq
   console.log('Saved digest subscription for user:', userId, 'email:', email, 'frequency:', frequency);
 }
 
+export async function getUserDigestEmail(userId: string): Promise<string | null> {
+  try {
+    const response = await fetch(
+      `${SUPABASE_URL}/rest/v1/digest_subscribers?user_id=eq.${userId}&is_active=eq.true&select=email&limit=1`,
+      { headers }
+    );
+    if (!response.ok) return null;
+    const data = await response.json();
+    return data.length > 0 ? data[0].email : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function checkWaitlistStatus(userId: string): Promise<boolean> {
+  try {
+    const response = await fetch(
+      `${SUPABASE_URL}/rest/v1/ai_agent_waitlist?user_id=eq.${userId}&select=id&limit=1`,
+      { headers }
+    );
+    if (!response.ok) return false;
+    const data = await response.json();
+    return data.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+export async function joinAiAgentWaitlist(
+  userId: string,
+  articleId?: string,
+  email?: string
+): Promise<void> {
+  const body: Record<string, string | undefined> = {
+    user_id: userId,
+  };
+  if (articleId) body.article_id = articleId;
+  if (email) body.email = email.toLowerCase().trim();
+
+  const response = await fetch(`${SUPABASE_URL}/rest/v1/ai_agent_waitlist`, {
+    method: 'POST',
+    headers: {
+      ...headers,
+      'Prefer': 'return=minimal,resolution=merge-duplicates',
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('Join waitlist error:', response.status, errorText);
+    throw new Error(`Failed to join waitlist: ${response.status}`);
+  }
+}
+
 export async function getArticleDetail(articleId: string): Promise<ArticleDetail> {
   const response = await fetch(
     `${SUPABASE_URL}/rest/v1/ai_articles?id=eq.${articleId}&select=*`,
