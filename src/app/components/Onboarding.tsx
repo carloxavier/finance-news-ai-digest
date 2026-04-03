@@ -12,7 +12,7 @@ import { Check, ArrowLeft, ArrowRight, Mail, TrendingUp } from "lucide-react";
 
 type Step = 1 | 2 | 3;
 
-const DIMENSION_ORDER: Array<Topic["dimension"]> = ["industry", "theme", "geography"];
+const DIMENSION_ORDER: Array<Topic["dimension"]> = ["industry", "theme"];
 const DIMENSION_LABELS: Record<string, string> = {
   industry: "Industries",
   theme: "Themes",
