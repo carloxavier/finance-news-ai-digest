@@ -287,6 +287,32 @@ export async function joinAiAgentWaitlist(
   }
 }
 
+export async function saveOnboardingSurvey(
+  userId: string,
+  data: {
+    investing_style: string;
+    content_density: string;
+  }
+): Promise<void> {
+  const response = await fetch(`${SUPABASE_URL}/rest/v1/onboarding_survey`, {
+    method: 'POST',
+    headers: {
+      ...headers,
+      'Prefer': 'return=minimal,resolution=merge-duplicates',
+    },
+    body: JSON.stringify({
+      user_id: userId,
+      ...data,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('Save survey error:', response.status, errorText);
+    throw new Error(`Failed to save survey: ${response.status}`);
+  }
+}
+
 export async function getArticleDetail(articleId: string): Promise<ArticleDetail> {
   const response = await fetch(
     `${SUPABASE_URL}/rest/v1/ai_articles?id=eq.${articleId}&select=*`,

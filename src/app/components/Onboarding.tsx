@@ -5,12 +5,13 @@ import {
   saveUserInterests,
   saveUserTickers,
   saveDigestSubscription,
+  saveOnboardingSurvey,
   type Topic,
 } from "../utils/supabase";
 import { getUserId, hasCompletedOnboarding, setOnboardingComplete } from "../utils/userId";
 import { Check, ArrowLeft, ArrowRight, Mail, TrendingUp } from "lucide-react";
 
-type Step = 1 | 2 | 3;
+type Step = 1 | 2 | 3 | 4;
 
 const DIMENSION_ORDER: Array<Topic["dimension"]> = ["industry", "theme"];
 const DIMENSION_LABELS: Record<string, string> = {
@@ -19,6 +20,19 @@ const DIMENSION_LABELS: Record<string, string> = {
   geography: "Regions",
 };
 
+const INVESTING_STYLES = [
+  { value: "buy_and_hold", label: "Buy-and-Hold Investor", subtitle: "Long-term growth, focus on fundamentals" },
+  { value: "active_trader", label: "Active Trader", subtitle: "Frequent trades, momentum and technicals" },
+  { value: "passive_index", label: "Passive / Index Investor", subtitle: "ETFs, set-and-forget, low maintenance" },
+  { value: "beginner", label: "Just Getting Started", subtitle: "Learning the ropes, building my first portfolio" },
+];
+
+const CONTENT_DENSITIES = [
+  { value: "quick_hits", label: "Quick hits", subtitle: "Just the headlines and key takeaways. 2-3 min read." },
+  { value: "essentials", label: "The essentials", subtitle: "The important stories with enough context to act on. 5-10 min read." },
+  { value: "deep_coverage", label: "Deep coverage", subtitle: "Comprehensive analysis, multiple angles per story. 15+ min read." },
+];
+
 export function Onboarding() {
   const navigate = useNavigate();
 
@@ -26,15 +40,19 @@ export function Onboarding() {
   const [step, setStep] = useState<Step>(1);
   const [saving, setSaving] = useState(false);
 
-  // Step 1 — Topics
+  // Step 1 — Investing style
+  const [investingStyle, setInvestingStyle] = useState<string | null>(null);
+
+  // Step 2 — Content density
+  const [contentDensity, setContentDensity] = useState<string | null>(null);
+
+  // Step 3 — Topics
   const [topics, setTopics] = useState<Topic[]>([]);
   const [selectedTopics, setSelectedTopics] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
 
-  // Step 2 — Tickers
+  // Step 4 — Tickers + Email
   const [tickerInput, setTickerInput] = useState("");
-
-  // Step 3 — Email
   const [email, setEmail] = useState("");
   const [frequency, setFrequency] = useState<"daily" | "weekly">("daily");
 
@@ -75,7 +93,15 @@ export function Onboarding() {
     try {
       const userId = getUserId();
 
-      // Always save topics
+      // Save survey responses
+      if (investingStyle && contentDensity) {
+        await saveOnboardingSurvey(userId, {
+          investing_style: investingStyle,
+          content_density: contentDensity,
+        });
+      }
+
+      // Save topics
       await saveUserInterests(userId, Array.from(selectedTopics));
 
       // Save tickers if any were entered
@@ -126,7 +152,7 @@ export function Onboarding() {
         </p>
       </div>
       <div className="flex items-center justify-center">
-      {([1, 2, 3] as Step[]).map((s, i) => (
+      {([1, 2, 3, 4] as Step[]).map((s, i) => (
         <div key={s} className="flex items-center">
           {i > 0 && <div className="w-12 h-px bg-white/20" />}
           <div
@@ -156,9 +182,134 @@ export function Onboarding() {
     );
   }
 
-  // =====================  STEP 1 — Topics  =====================
+  // =====================  STEP 1 — Investing Style  =====================
 
   if (step === 1) {
+    return (
+      <div className="min-h-screen px-6 py-12 max-w-4xl mx-auto">
+        <StepIndicator />
+
+        <div className="mb-12">
+          <h1 className="text-4xl mb-4" style={{ fontFamily: "var(--font-headline)" }}>
+            How do you invest?
+          </h1>
+          <p className="text-white/70 text-lg">
+            This helps us tailor the depth and tone of your news digest.
+          </p>
+        </div>
+
+        <div className="space-y-3 mb-12">
+          {INVESTING_STYLES.map((option) => {
+            const isSelected = investingStyle === option.value;
+            return (
+              <button
+                key={option.value}
+                onClick={() => setInvestingStyle(option.value)}
+                className={`w-full px-5 py-4 rounded-lg border-2 transition-all text-left ${
+                  isSelected
+                    ? "border-[var(--layer1-blue)] bg-[var(--layer1-blue)]/10"
+                    : "border-white/20 hover:border-white/40"
+                }`}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-base font-medium mb-1">{option.label}</div>
+                    <div className="text-sm text-white/50">{option.subtitle}</div>
+                  </div>
+                  {isSelected && <Check className="w-5 h-5 text-[var(--layer1-blue)] flex-shrink-0" />}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="flex justify-end items-center pt-6 border-t border-white/10">
+          <button
+            onClick={() => setStep(2)}
+            disabled={!investingStyle}
+            className={`flex items-center gap-2 px-8 py-3 rounded-lg transition-all ${
+              investingStyle
+                ? "bg-[var(--layer1-blue)] hover:bg-[var(--layer1-blue)]/90 text-white"
+                : "bg-white/10 text-white/30 cursor-not-allowed"
+            }`}
+          >
+            Continue
+            <ArrowRight className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // =====================  STEP 2 — Content Density  =====================
+
+  if (step === 2) {
+    return (
+      <div className="min-h-screen px-6 py-12 max-w-4xl mx-auto">
+        <StepIndicator />
+
+        <div className="mb-12">
+          <h1 className="text-4xl mb-4" style={{ fontFamily: "var(--font-headline)" }}>
+            How would you like your news?
+          </h1>
+          <p className="text-white/70 text-lg">
+            Choose how much detail you want in your daily digest.
+          </p>
+        </div>
+
+        <div className="space-y-3 mb-12">
+          {CONTENT_DENSITIES.map((option) => {
+            const isSelected = contentDensity === option.value;
+            return (
+              <button
+                key={option.value}
+                onClick={() => setContentDensity(option.value)}
+                className={`w-full px-5 py-4 rounded-lg border-2 transition-all text-left ${
+                  isSelected
+                    ? "border-[var(--layer1-blue)] bg-[var(--layer1-blue)]/10"
+                    : "border-white/20 hover:border-white/40"
+                }`}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-base font-medium mb-1">{option.label}</div>
+                    <div className="text-sm text-white/50">{option.subtitle}</div>
+                  </div>
+                  {isSelected && <Check className="w-5 h-5 text-[var(--layer1-blue)] flex-shrink-0" />}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="flex justify-between items-center pt-6 border-t border-white/10">
+          <button
+            onClick={() => setStep(1)}
+            className="flex items-center gap-2 text-white/60 hover:text-white transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Back
+          </button>
+          <button
+            onClick={() => setStep(3)}
+            disabled={!contentDensity}
+            className={`flex items-center gap-2 px-8 py-3 rounded-lg transition-all ${
+              contentDensity
+                ? "bg-[var(--layer1-blue)] hover:bg-[var(--layer1-blue)]/90 text-white"
+                : "bg-white/10 text-white/30 cursor-not-allowed"
+            }`}
+          >
+            Continue
+            <ArrowRight className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // =====================  STEP 3 — Topics  =====================
+
+  if (step === 3) {
     return (
       <div className="min-h-screen px-6 py-12 max-w-4xl mx-auto">
         <StepIndicator />
@@ -208,45 +359,61 @@ export function Onboarding() {
         </div>
 
         <div className="flex justify-between items-center pt-6 border-t border-white/10">
-          <div className="text-white/50 text-sm">
-            {selectedTopics.size} {selectedTopics.size === 1 ? "topic" : "topics"} selected
-          </div>
           <button
             onClick={() => setStep(2)}
-            disabled={selectedTopics.size === 0}
-            className={`flex items-center gap-2 px-8 py-3 rounded-lg transition-all ${
-              selectedTopics.size > 0
-                ? "bg-[var(--layer1-blue)] hover:bg-[var(--layer1-blue)]/90 text-white"
-                : "bg-white/10 text-white/30 cursor-not-allowed"
-            }`}
+            className="flex items-center gap-2 text-white/60 hover:text-white transition-colors"
           >
-            Continue
-            <ArrowRight className="w-4 h-4" />
+            <ArrowLeft className="w-4 h-4" />
+            Back
           </button>
+          <div className="flex items-center gap-2">
+            <div className="text-white/50 text-sm mr-4">
+              {selectedTopics.size} {selectedTopics.size === 1 ? "topic" : "topics"} selected
+            </div>
+            <button
+              onClick={() => setStep(4)}
+              disabled={selectedTopics.size === 0}
+              className={`flex items-center gap-2 px-8 py-3 rounded-lg transition-all ${
+                selectedTopics.size > 0
+                  ? "bg-[var(--layer1-blue)] hover:bg-[var(--layer1-blue)]/90 text-white"
+                  : "bg-white/10 text-white/30 cursor-not-allowed"
+              }`}
+            >
+              Continue
+              <ArrowRight className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       </div>
     );
   }
 
-  // =====================  STEP 2 — Tickers  =====================
+  // =====================  STEP 4 — Tickers + Email  =====================
 
-  if (step === 2) {
-    const tickers = parseTickers();
+  const tickers = parseTickers();
 
-    return (
-      <div className="min-h-screen px-6 py-12 max-w-4xl mx-auto">
-        <StepIndicator />
+  return (
+    <div className="min-h-screen px-6 py-12 max-w-4xl mx-auto">
+      <StepIndicator />
 
-        <div className="mb-12">
-          <h1 className="text-4xl mb-4" style={{ fontFamily: "var(--font-headline)" }}>
-            Which stocks do you follow?
-          </h1>
-          <p className="text-white/70 text-lg">
-            Add ticker symbols for stocks in your portfolio or watchlist. We'll highlight articles that mention them.
-          </p>
-        </div>
+      <div className="mb-12">
+        <h1 className="text-4xl mb-4" style={{ fontFamily: "var(--font-headline)" }}>
+          Your portfolio & digest
+        </h1>
+        <p className="text-white/70 text-lg">
+          Add stocks you follow and optionally get your digest by email.
+        </p>
+      </div>
 
-        <div className="mb-8">
+      {/* Section A — Tickers */}
+      <div className="mb-10">
+        <h3
+          className="text-white/50 uppercase text-sm tracking-wider mb-4"
+          style={{ fontFamily: "var(--font-mono)" }}
+        >
+          Stocks you follow
+        </h3>
+        <div className="mb-4">
           <div className="relative">
             <TrendingUp className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/40" />
             <input
@@ -262,7 +429,7 @@ export function Onboarding() {
         </div>
 
         {tickers.length > 0 && (
-          <div className="flex flex-wrap gap-2 mb-8">
+          <div className="flex flex-wrap gap-2">
             {tickers.map((ticker) => (
               <span
                 key={ticker}
@@ -274,138 +441,67 @@ export function Onboarding() {
             ))}
           </div>
         )}
-
-        <div className="flex justify-between items-center pt-6 border-t border-white/10">
-          <button
-            onClick={() => setStep(1)}
-            className="flex items-center gap-2 text-white/60 hover:text-white transition-colors"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            Back
-          </button>
-          <div className="flex items-center gap-4">
-            <button
-              onClick={() => setStep(3)}
-              className="text-white/60 hover:text-white transition-colors text-sm"
-            >
-              Skip
-            </button>
-            <button
-              onClick={() => setStep(3)}
-              className="flex items-center gap-2 px-8 py-3 rounded-lg bg-[var(--layer1-blue)] hover:bg-[var(--layer1-blue)]/90 text-white transition-all"
-            >
-              Continue
-              <ArrowRight className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // =====================  STEP 3 — Email  =====================
-
-  const tickers = parseTickers();
-  const emailValid = isValidEmail(email);
-
-  return (
-    <div className="min-h-screen px-6 py-12 max-w-4xl mx-auto">
-      <StepIndicator />
-
-      <div className="mb-12">
-        <h1 className="text-4xl mb-4" style={{ fontFamily: "var(--font-headline)" }}>
-          Stay in the loop
-        </h1>
-        <p className="text-white/70 text-lg">
-          Get your personalized financial digest delivered to your inbox. We'll send only the articles that match your
-          interests.
-        </p>
       </div>
 
-      {/* Email input */}
-      <div className="mb-6">
-        <div className="relative">
-          <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/40" />
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="you@example.com"
-            className="w-full pl-12 pr-4 py-3 rounded-lg bg-white/5 border border-white/20 text-white placeholder-white/30 focus:outline-none focus:border-[var(--layer1-blue)] transition-colors"
-          />
-        </div>
-      </div>
-
-      {/* Frequency toggle */}
-      <div className="flex gap-3 mb-8">
-        {(["daily", "weekly"] as const).map((f) => (
-          <button
-            key={f}
-            onClick={() => setFrequency(f)}
-            className={`px-6 py-2.5 rounded-lg border transition-all capitalize ${
-              frequency === f
-                ? "border-[var(--layer1-blue)] bg-[var(--layer1-blue)]/10 text-white"
-                : "border-white/20 text-white/60 hover:border-white/40"
-            }`}
-          >
-            {f}
-          </button>
-        ))}
-      </div>
-
-      {/* Preferences summary */}
-      <div className="bg-white/5 border border-white/10 rounded-xl p-5 mb-8">
-        <h4
-          className="text-white/50 uppercase text-xs tracking-wider mb-3"
+      {/* Section B — Email digest */}
+      <div className="mb-10">
+        <h3
+          className="text-white/50 uppercase text-sm tracking-wider mb-4"
           style={{ fontFamily: "var(--font-mono)" }}
         >
-          Your preferences
-        </h4>
-        <div className="space-y-2 text-sm">
-          <div className="flex items-center gap-2">
-            <span className="text-white/50">Topics:</span>
-            <span className="text-white">{selectedTopics.size} selected</span>
+          Email digest
+        </h3>
+        <div className="mb-4">
+          <div className="relative">
+            <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/40" />
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@example.com (optional)"
+              className="w-full pl-12 pr-4 py-3 rounded-lg bg-white/5 border border-white/20 text-white placeholder-white/30 focus:outline-none focus:border-[var(--layer1-blue)] transition-colors"
+            />
           </div>
-          {tickers.length > 0 && (
-            <div className="flex items-center gap-2">
-              <span className="text-white/50">Tickers:</span>
-              <span className="text-white" style={{ fontFamily: "var(--font-mono)" }}>
-                {tickers.join(", ")}
-              </span>
-            </div>
-          )}
+        </div>
+
+        <div className="flex gap-3">
+          {(["daily", "weekly"] as const).map((f) => (
+            <button
+              key={f}
+              onClick={() => setFrequency(f)}
+              className={`px-6 py-2.5 rounded-lg border transition-all capitalize ${
+                frequency === f
+                  ? "border-[var(--layer1-blue)] bg-[var(--layer1-blue)]/10 text-white"
+                  : "border-white/20 text-white/60 hover:border-white/40"
+              }`}
+            >
+              {f}
+            </button>
+          ))}
         </div>
       </div>
 
       {/* Footer */}
       <div className="flex justify-between items-center pt-6 border-t border-white/10">
         <button
-          onClick={() => setStep(2)}
+          onClick={() => setStep(3)}
           className="flex items-center gap-2 text-white/60 hover:text-white transition-colors"
         >
           <ArrowLeft className="w-4 h-4" />
           Back
         </button>
-        <div className="flex items-center gap-4">
-          <button
-            onClick={handleSaveAndContinue}
-            disabled={saving}
-            className="text-white/60 hover:text-white transition-colors text-sm"
-          >
-            {saving ? "Saving..." : "Skip, go to feed"}
-          </button>
-          <button
-            onClick={handleSaveAndContinue}
-            disabled={!emailValid || saving}
-            className={`px-8 py-3 rounded-lg transition-all ${
-              emailValid && !saving
-                ? "bg-[var(--layer1-blue)] hover:bg-[var(--layer1-blue)]/90 text-white"
-                : "bg-white/10 text-white/30 cursor-not-allowed"
-            }`}
-          >
-            {saving ? "Saving..." : "Subscribe & Continue"}
-          </button>
-        </div>
+        <button
+          onClick={handleSaveAndContinue}
+          disabled={saving}
+          className={`flex items-center gap-2 px-8 py-3 rounded-lg transition-all ${
+            !saving
+              ? "bg-[var(--layer1-blue)] hover:bg-[var(--layer1-blue)]/90 text-white"
+              : "bg-white/10 text-white/30 cursor-not-allowed"
+          }`}
+        >
+          {saving ? "Saving..." : "Start reading"}
+          {!saving && <ArrowRight className="w-4 h-4" />}
+        </button>
       </div>
     </div>
   );

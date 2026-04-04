@@ -131,7 +131,7 @@ export function ArticleDetail() {
 
           {/* Tickers */}
           <div className="flex flex-wrap gap-2 mb-6">
-            {article.extracted_tickers.map((ticker) => (
+            {(article.extracted_tickers ?? []).map((ticker) => (
               <span
                 key={ticker}
                 className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-sm"
