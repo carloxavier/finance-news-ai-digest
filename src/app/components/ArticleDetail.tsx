@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router";
-import { getArticleDetail, checkWaitlistStatus, joinAiAgentWaitlist, getUserDigestEmail, type ArticleDetail as ArticleDetailType } from "../utils/supabase";
-import { formatDistanceToNow } from "date-fns";
+import { getArticleDetail, checkWaitlistStatus, joinAiAgentWaitlist, getUserDigestEmail, formatArticleDate, type ArticleDetail as ArticleDetailType } from "../utils/supabase";
 import { ArrowLeft, ExternalLink, AlertTriangle, Sparkles } from "lucide-react";
 import { AnalystDataSection } from "./AnalystDataSection";
 import {
@@ -121,7 +120,7 @@ export function ArticleDetail() {
             </span>
             <span className="text-xs text-white/30">•</span>
             <span className="text-xs text-white/40">
-              {formatDistanceToNow(new Date(article.published_at), { addSuffix: true })}
+              {formatArticleDate(article.published_at)}
             </span>
           </div>
 

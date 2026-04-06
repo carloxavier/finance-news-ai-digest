@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
-import { getUserFeed, getSubscriberFeed, type Article } from "../utils/supabase";
+import { getUserFeed, getSubscriberFeed, formatArticleDate, type Article } from "../utils/supabase";
 import { getUserId, hasCompletedOnboarding, resetOnboarding, getFeedToken, clearFeedToken } from "../utils/userId";
-import { formatDistanceToNow } from "date-fns";
 import { TrendingUp, TrendingDown, Minus, AlertCircle, Settings } from "lucide-react";
 
 export function Feed() {
@@ -144,7 +143,7 @@ export function Feed() {
                   </span>
                   <span className="text-xs text-white/30">•</span>
                   <span className="text-xs text-white/40">
-                    {formatDistanceToNow(new Date(article.published_at), { addSuffix: true })}
+                    {formatArticleDate(article.published_at)}
                   </span>
                 </div>
 

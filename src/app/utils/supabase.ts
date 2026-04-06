@@ -1,3 +1,5 @@
+import { formatDistanceToNow } from "date-fns";
+
 const SUPABASE_URL = 'https://kamfamwjswkncftsdgxi.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImthbWZhbXdqc3drbmNmdHNkZ3hpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMxMDQ3NDgsImV4cCI6MjA4ODY4MDc0OH0.O8NasVjjajK-T18GppCjfljS_h30fNrPo3TgPJGmcEs';
 
@@ -343,6 +345,13 @@ export async function getSubscriberFeed(token: string, limit: number = 20): Prom
   const data = await response.json();
   if (data?.error === 'not_found') return null;
   return data;
+}
+
+export function formatArticleDate(dateStr: string | null | undefined): string {
+  if (!dateStr) return 'Recently';
+  const date = new Date(dateStr);
+  if (isNaN(date.getTime())) return 'Recently';
+  return formatDistanceToNow(date, { addSuffix: true });
 }
 
 export async function getArticleDetail(articleId: string): Promise<ArticleDetail> {
