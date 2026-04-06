@@ -10,6 +10,7 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 const SITE_BASE_URL = "https://finnopolis.com";
+const TRACK_CLICK_URL = `${SUPABASE_URL}/functions/v1/track-click`;
 const FROM_EMAIL = "Finance AI Digest <digest@finnopolis.com>";
 const REPLY_TO = "carlo@finnopolis.com";
 
@@ -33,6 +34,20 @@ interface Article {
   consensus_signal: string;
   extracted_tickers: string[];
   inference_watch: string[];
+}
+
+interface ArticleWithToken extends Article {
+  clickToken: string;
+}
+
+// ─── Click token generator ──────────────────────────────────────────
+
+function generateClickToken(): string {
+  const bytes = new Uint8Array(9);
+  crypto.getRandomValues(bytes);
+  return btoa(String.fromCharCode(...bytes))
+    .replace(/[+/=]/g, c => c === '+' ? '-' : c === '/' ? '_' : '')
+    .slice(0, 12);
 }
 
 // ─── Main handler ────────────────────────────────────────────────────
@@ -68,16 +83,25 @@ Deno.serve(async (_req: Request) => {
     let failed = 0;
     const errors: string[] = [];
 
+    // Batch ID for this digest run
+    const batchId = `digest-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-0700`;
+
     // 2. Process each subscriber
     for (const sub of subscribers as Subscriber[]) {
       try {
-        // Get their personalized feed (top 5 articles)
+        // Get their personalized feed (top 10 recent articles)
         const articles = await getSubscriberArticles(supabase, sub.user_id);
 
         if (articles.length === 0) {
           console.log(`No articles for ${sub.email}, skipping`);
           continue;
         }
+
+        // Assign click tokens to each article
+        const articlesWithTokens: ArticleWithToken[] = articles.map(a => ({
+          ...a,
+          clickToken: generateClickToken(),
+        }));
 
         // Get their tickers for highlighting
         const { data: tickerRows } = await supabase
@@ -87,10 +111,22 @@ Deno.serve(async (_req: Request) => {
         const userTickers = (tickerRows || []).map((r: { ticker: string }) => r.ticker);
 
         // Build and send email
-        const html = renderDigestEmail(articles, userTickers, sub, sent + failed + 1);
+        const html = renderDigestEmail(articlesWithTokens, userTickers, sub, sent + failed + 1);
         const subject = `📊 Your Finance Digest — ${formatDate(new Date())}`;
 
-        await sendEmail(sub.email, subject, html);
+        await sendEmail(sub.email, subject, html, batchId);
+
+        // Record sent articles with click tokens
+        const sentRecords = articlesWithTokens.map(a => ({
+          subscriber_id: sub.id,
+          article_id: a.id,
+          digest_batch: batchId,
+          click_token: a.clickToken,
+        }));
+
+        await supabase
+          .from("digest_sent_articles")
+          .upsert(sentRecords, { onConflict: "subscriber_id,article_id", ignoreDuplicates: true });
 
         // Update last_sent_at
         await supabase
@@ -99,7 +135,7 @@ Deno.serve(async (_req: Request) => {
           .eq("id", sub.id);
 
         sent++;
-        console.log(`✓ Sent digest to ${sub.email} (${articles.length} articles)`);
+        console.log(`✓ Sent digest to ${sub.email} (${articles.length} articles, batch: ${batchId})`);
       } catch (err) {
         failed++;
         const msg = err instanceof Error ? err.message : String(err);
@@ -153,20 +189,26 @@ async function getSubscriberArticles(
   return articles || [];
 }
 
-async function sendEmail(to: string, subject: string, html: string): Promise<void> {
+async function sendEmail(to: string, subject: string, html: string, batchId?: string): Promise<void> {
+  const payload: Record<string, unknown> = {
+    from: FROM_EMAIL,
+    to: [to],
+    subject,
+    html,
+    reply_to: REPLY_TO,
+  };
+
+  if (batchId) {
+    payload.tags = [{ name: "digest_batch", value: batchId }];
+  }
+
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${RESEND_API_KEY}`,
     },
-    body: JSON.stringify({
-      from: FROM_EMAIL,
-      to: [to],
-      subject,
-      html,
-      reply_to: REPLY_TO,
-    }),
+    body: JSON.stringify(payload),
   });
 
   if (!res.ok) {
@@ -206,7 +248,7 @@ function timeAgo(dateStr: string): string {
 // ─── Email template ──────────────────────────────────────────────────
 
 function renderDigestEmail(
-  articles: Article[],
+  articles: ArticleWithToken[],
   userTickers: string[],
   subscriber: Subscriber,
   dayNumber: number
@@ -215,10 +257,8 @@ function renderDigestEmail(
 
   const articleCards = articles
     .map((article) => {
-      const url =
-        `${SITE_BASE_URL}/article/${article.id}` +
-        `?t=${subscriber.feed_token}` +
-        `&utm_source=digest&utm_medium=email&utm_campaign=day${dayNumber}`;
+      // Use tracked click URL for article links
+      const url = `${TRACK_CLICK_URL}?t=${article.clickToken}`;
 
       const signalColor =
         article.consensus_signal === "BUY" ? "#22c55e" :
