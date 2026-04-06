@@ -313,6 +313,25 @@ export async function saveOnboardingSurvey(
   }
 }
 
+export interface SubscriberFeed {
+  subscriber: { email: string; frequency: string };
+  topics: Array<{ slug: string; display_name: string }>;
+  articles: Article[];
+}
+
+export async function getSubscriberFeed(token: string, limit: number = 20): Promise<SubscriberFeed | null> {
+  const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_subscriber_feed`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ p_token: token, p_limit: limit }),
+  });
+
+  if (!response.ok) return null;
+  const data = await response.json();
+  if (data?.error === 'not_found') return null;
+  return data;
+}
+
 export async function getArticleDetail(articleId: string): Promise<ArticleDetail> {
   const response = await fetch(
     `${SUPABASE_URL}/rest/v1/ai_articles?id=eq.${articleId}&select=*`,

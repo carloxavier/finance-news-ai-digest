@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
-import { getUserFeed, type Article } from "../utils/supabase";
-import { getUserId, hasCompletedOnboarding, resetOnboarding } from "../utils/userId";
+import { getUserFeed, getSubscriberFeed, type Article } from "../utils/supabase";
+import { getUserId, hasCompletedOnboarding, resetOnboarding, getFeedToken, clearFeedToken } from "../utils/userId";
 import { formatDistanceToNow } from "date-fns";
 import { TrendingUp, TrendingDown, Minus, AlertCircle, Settings } from "lucide-react";
 
@@ -18,15 +18,33 @@ export function Feed() {
       return;
     }
 
-    // Load feed
-    const userId = getUserId();
-    getUserFeed(userId)
-      .then(setArticles)
-      .catch((err) => {
-        console.error("Feed error:", err);
-        setError(err.message || "Failed to load feed");
-      })
-      .finally(() => setLoading(false));
+    // Load feed — prefer feed token (from email links) over user ID
+    const feedToken = getFeedToken();
+    if (feedToken) {
+      getSubscriberFeed(feedToken)
+        .then((feed) => {
+          if (feed) {
+            setArticles(feed.articles);
+          } else {
+            // Token invalid — clear it and fall back to user ID feed
+            clearFeedToken();
+            return getUserFeed(getUserId()).then(setArticles);
+          }
+        })
+        .catch((err) => {
+          console.error("Feed error:", err);
+          setError(err.message || "Failed to load feed");
+        })
+        .finally(() => setLoading(false));
+    } else {
+      getUserFeed(getUserId())
+        .then(setArticles)
+        .catch((err) => {
+          console.error("Feed error:", err);
+          setError(err.message || "Failed to load feed");
+        })
+        .finally(() => setLoading(false));
+    }
   }, [navigate]);
 
   const handleResetPreferences = () => {
@@ -155,7 +173,7 @@ export function Feed() {
                     ))}
                     {(article.extracted_tickers ?? []).length > 4 && (
                       <span className="px-2 py-1 text-xs text-white/40">
-                        +{article.extracted_tickers.length - 4} more
+                        +{(article.extracted_tickers ?? []).length - 4} more
                       </span>
                     )}
                   </div>

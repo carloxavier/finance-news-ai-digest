@@ -1,14 +1,15 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 import {
   getTopics,
   saveUserInterests,
   saveUserTickers,
   saveDigestSubscription,
   saveOnboardingSurvey,
+  getSubscriberFeed,
   type Topic,
 } from "../utils/supabase";
-import { getUserId, hasCompletedOnboarding, setOnboardingComplete } from "../utils/userId";
+import { getUserId, hasCompletedOnboarding, setOnboardingComplete, setFeedToken } from "../utils/userId";
 import { Check, ArrowLeft, ArrowRight, Mail, TrendingUp } from "lucide-react";
 
 type Step = 1 | 2 | 3 | 4;
@@ -35,6 +36,7 @@ const CONTENT_DENSITIES = [
 
 export function Onboarding() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   // Shared state
   const [step, setStep] = useState<Step>(1);
@@ -57,16 +59,36 @@ export function Onboarding() {
   const [frequency, setFrequency] = useState<"daily" | "weekly">("daily");
 
   useEffect(() => {
+    // Check for feed token from email link
+    const feedToken = searchParams.get("t");
+    if (feedToken) {
+      getSubscriberFeed(feedToken).then((feed) => {
+        if (feed) {
+          setFeedToken(feedToken);
+          setOnboardingComplete();
+          navigate("/feed");
+        } else {
+          // Invalid token — fall through to normal onboarding
+          loadTopics();
+        }
+      }).catch(() => loadTopics());
+      return;
+    }
+
     if (hasCompletedOnboarding()) {
       navigate("/feed");
       return;
     }
 
+    loadTopics();
+  }, [navigate, searchParams]);
+
+  function loadTopics() {
     getTopics()
       .then(setTopics)
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, [navigate]);
+  }
 
   // --- Helpers ---
 

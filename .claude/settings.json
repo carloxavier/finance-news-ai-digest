@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git *)",
+      "Bash(gh *)",
+      "Bash(npm *)",
+      "Bash(npx *)",
+      "Bash(ls *)",
+      "Bash(mkdir *)",
+      "Bash(cat *)",
+      "Bash(pwd)",
+      "Bash(which *)",
+      "Bash(node *)",
+      "Bash(mdfind *)",
+      "Bash(export *)",
+      "Read(*)",
+      "Edit(*)",
+      "Write(*)",
+      "Glob(*)",
+      "Grep(*)",
+      "TodoWrite(*)",
+      "Agent(*)",
+      "mcp__f1103e02-ed7c-48bf-9391-ad262d0f0d17__*",
+      "mcp__Claude_Preview__*",
+      "mcp__5af6f8ee-31d6-4b6d-8968-6f853c58b57a__*",
+      "mcp__e44f2d09-a091-4ce1-b35b-b32d798fb1ce__*",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:supabase.com)",
+      "WebFetch(domain:resend.com)"
+    ]
+  }
+}
