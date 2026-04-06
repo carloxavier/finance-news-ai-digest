@@ -18,16 +18,20 @@ export function Feed() {
     }
 
     // Load feed — prefer feed token (from email links) over user ID
+    // Filter out articles that have no displayable content
+    const filterValid = (articles: Article[]) =>
+      articles.filter(a => a.headline || a.ai_preview);
+
     const feedToken = getFeedToken();
     if (feedToken) {
       getSubscriberFeed(feedToken)
         .then((feed) => {
           if (feed) {
-            setArticles(feed.articles);
+            setArticles(filterValid(feed.articles));
           } else {
             // Token invalid — clear it and fall back to user ID feed
             clearFeedToken();
-            return getUserFeed(getUserId()).then(setArticles);
+            return getUserFeed(getUserId()).then(a => setArticles(filterValid(a)));
           }
         })
         .catch((err) => {
@@ -37,7 +41,7 @@ export function Feed() {
         .finally(() => setLoading(false));
     } else {
       getUserFeed(getUserId())
-        .then(setArticles)
+        .then(a => setArticles(filterValid(a)))
         .catch((err) => {
           console.error("Feed error:", err);
           setError(err.message || "Failed to load feed");

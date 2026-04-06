@@ -342,21 +342,62 @@ export interface SubscriberFeed {
   articles: Article[];
 }
 
+// Walk all string values from an object (including nested), keyed by path.
+function flattenValues(obj: unknown, prefix = ''): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
+    for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
+      const key = prefix ? `${prefix}.${k}` : k;
+      result[k] = v; // shallow key
+      result[key] = v; // dotted path
+      if (v && typeof v === 'object' && !Array.isArray(v)) {
+        Object.assign(result, flattenValues(v, key));
+      }
+    }
+  }
+  return result;
+}
+
+// Find first truthy string value matching any of the candidate keys.
+function pick(flat: Record<string, unknown>, ...keys: string[]): string {
+  for (const k of keys) {
+    const v = flat[k];
+    if (typeof v === 'string' && v.length > 0) return v;
+  }
+  return '';
+}
+
+// Find first truthy array value matching any of the candidate keys.
+function pickArray(flat: Record<string, unknown>, ...keys: string[]): string[] {
+  for (const k of keys) {
+    const v = flat[k];
+    if (Array.isArray(v)) return v as string[];
+  }
+  return [];
+}
+
 // Normalize an article object from any RPC response shape into our Article interface.
-// Handles: flat objects, nested `article` or `ai_articles` wrappers, and aliased keys.
+// Flattens nested objects and searches all keys to find matching fields.
 function normalizeArticle(raw: Record<string, unknown>): Article {
-  // If the article fields are nested under a key, unwrap them
-  const src = (raw.article ?? raw.ai_articles ?? raw) as Record<string, unknown>;
-  return {
-    id: (raw.id ?? src.id) as string,
-    headline: (src.headline ?? src.title ?? '') as string,
-    publication: (src.publication ?? src.source ?? '') as string,
-    published_at: (src.published_at ?? src.publishedAt ?? '') as string,
-    ai_preview: (src.ai_preview ?? src.aiPreview ?? src.summary ?? '') as string,
-    consensus_signal: (src.consensus_signal ?? src.signal ?? 'NO_RATING') as Article['consensus_signal'],
-    extracted_tickers: (src.extracted_tickers ?? src.tickers ?? []) as string[],
-    source_url: (src.source_url ?? src.sourceUrl ?? src.url ?? '') as string,
+  const flat = flattenValues(raw);
+
+  const article: Article = {
+    id: pick(flat, 'id', 'article_id') || (raw.id as string) || '',
+    headline: pick(flat, 'headline', 'title', 'name'),
+    publication: pick(flat, 'publication', 'source', 'publisher', 'source_name'),
+    published_at: pick(flat, 'published_at', 'publishedAt', 'pub_date', 'date', 'created_at'),
+    ai_preview: pick(flat, 'ai_preview', 'aiPreview', 'summary', 'preview', 'description', 'ai_summary'),
+    consensus_signal: (pick(flat, 'consensus_signal', 'signal', 'rating') || 'NO_RATING') as Article['consensus_signal'],
+    extracted_tickers: pickArray(flat, 'extracted_tickers', 'tickers', 'ticker_list', 'symbols'),
+    source_url: pick(flat, 'source_url', 'sourceUrl', 'url', 'link', 'original_url'),
   };
+
+  // Log if normalization produced an empty headline — helps debug unknown shapes
+  if (!article.headline) {
+    console.warn('[normalizeArticle] Could not extract headline from:', JSON.stringify(raw).slice(0, 500));
+  }
+
+  return article;
 }
 
 export async function getSubscriberFeed(token: string, limit: number = 20): Promise<SubscriberFeed | null> {
