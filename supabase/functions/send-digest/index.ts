@@ -107,8 +107,8 @@ Deno.serve(async (req: Request) => {
     // 2. Process each subscriber
     for (const sub of subscribers as Subscriber[]) {
       try {
-        // Get their personalized feed (top 10 recent articles)
-        const articles = await getSubscriberArticles(supabase, sub.user_id);
+        // Get their personalized feed (newest 8 articles, same source as the web feed)
+        const articles = await getSubscriberArticles(supabase, sub.feed_token);
 
         if (articles.length === 0) {
           console.log(`No articles for ${sub.email}, skipping`);
@@ -176,35 +176,31 @@ Deno.serve(async (req: Request) => {
 
 async function getSubscriberArticles(
   supabase: ReturnType<typeof createClient>,
-  userId: string
+  feedToken: string
 ): Promise<Article[]> {
-  const { data: feedIds, error: feedError } = await supabase.rpc("get_user_feed", {
-    p_user_id: userId,
-    p_limit: 5,
+  // Use the same RPC as the web feed so digest articles match what the user sees
+  const { data, error } = await supabase.rpc("get_subscriber_feed", {
+    p_token: feedToken,
+    p_limit: 8,
   });
 
-  if (feedError || !feedIds || feedIds.length === 0) {
-    const { data, error } = await supabase
-      .from("ai_articles")
-      .select("id, headline, publication, published_at, ai_preview, consensus_signal, extracted_tickers, inference_watch")
-      .eq("processing_status", "complete")
-      .order("published_at", { ascending: false })
-      .limit(5);
+  if (error) throw new Error(`get_subscriber_feed failed: ${error.message}`);
+  if (!data || data.error === "not_found") return [];
 
-    if (error) throw new Error(`Failed to fetch articles: ${error.message}`);
-    return data || [];
-  }
+  const articles = data.articles;
+  if (!Array.isArray(articles)) return [];
 
-  const ids = feedIds.map((r: { article_id: string }) => r.article_id);
-
-  const { data: articles, error: artError } = await supabase
-    .from("ai_articles")
-    .select("id, headline, publication, published_at, ai_preview, consensus_signal, extracted_tickers, inference_watch")
-    .in("id", ids)
-    .order("published_at", { ascending: false });
-
-  if (artError) throw new Error(`Failed to fetch article details: ${artError.message}`);
-  return articles || [];
+  // The RPC returns most fields but may lack inference_watch; fill in defaults
+  return articles.map((a: Record<string, unknown>) => ({
+    id: a.id as string,
+    headline: a.headline as string,
+    publication: a.publication as string,
+    published_at: a.published_at as string,
+    ai_preview: a.ai_preview as string,
+    consensus_signal: a.consensus_signal as string,
+    extracted_tickers: (a.extracted_tickers ?? []) as string[],
+    inference_watch: (a.inference_watch ?? []) as string[],
+  }));
 }
 
 async function sendEmail(to: string, subject: string, html: string, batchId?: string): Promise<void> {
