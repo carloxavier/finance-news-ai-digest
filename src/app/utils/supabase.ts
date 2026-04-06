@@ -116,6 +116,9 @@ export async function getUserFeed(userId: string, limit: number = 20): Promise<A
     if (response.ok) {
       const data = await response.json();
       console.log('Feed response:', data);
+      if (Array.isArray(data)) {
+        return data.map((a: Record<string, unknown>) => normalizeArticle(a));
+      }
       return data;
     }
     
@@ -156,6 +159,9 @@ export async function getUserFeed(userId: string, limit: number = 20): Promise<A
   if (articlesResponse.ok) {
     const data = await articlesResponse.json();
     console.log('Feed response (fallback):', data);
+    if (Array.isArray(data)) {
+      return data.map((a: Record<string, unknown>) => normalizeArticle(a));
+    }
     return data;
   }
 
@@ -171,7 +177,9 @@ export async function getUserFeed(userId: string, limit: number = 20): Promise<A
 
   const allArticles = await directArticlesResponse.json();
   console.log('Feed response (direct query):', allArticles);
-  return allArticles;
+  return Array.isArray(allArticles)
+    ? allArticles.map((a: Record<string, unknown>) => normalizeArticle(a))
+    : allArticles;
 }
 
 export async function saveUserTickers(userId: string, tickers: string[]): Promise<void> {
@@ -334,6 +342,23 @@ export interface SubscriberFeed {
   articles: Article[];
 }
 
+// Normalize an article object from any RPC response shape into our Article interface.
+// Handles: flat objects, nested `article` or `ai_articles` wrappers, and aliased keys.
+function normalizeArticle(raw: Record<string, unknown>): Article {
+  // If the article fields are nested under a key, unwrap them
+  const src = (raw.article ?? raw.ai_articles ?? raw) as Record<string, unknown>;
+  return {
+    id: (raw.id ?? src.id) as string,
+    headline: (src.headline ?? src.title ?? '') as string,
+    publication: (src.publication ?? src.source ?? '') as string,
+    published_at: (src.published_at ?? src.publishedAt ?? '') as string,
+    ai_preview: (src.ai_preview ?? src.aiPreview ?? src.summary ?? '') as string,
+    consensus_signal: (src.consensus_signal ?? src.signal ?? 'NO_RATING') as Article['consensus_signal'],
+    extracted_tickers: (src.extracted_tickers ?? src.tickers ?? []) as string[],
+    source_url: (src.source_url ?? src.sourceUrl ?? src.url ?? '') as string,
+  };
+}
+
 export async function getSubscriberFeed(token: string, limit: number = 20): Promise<SubscriberFeed | null> {
   const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_subscriber_feed`, {
     method: 'POST',
@@ -344,6 +369,12 @@ export async function getSubscriberFeed(token: string, limit: number = 20): Prom
   if (!response.ok) return null;
   const data = await response.json();
   if (data?.error === 'not_found') return null;
+
+  // Normalize articles to ensure consistent field names
+  if (data?.articles && Array.isArray(data.articles)) {
+    data.articles = data.articles.map((a: Record<string, unknown>) => normalizeArticle(a));
+  }
+
   return data;
 }
 
