@@ -106,7 +106,8 @@ export async function saveUserInterests(userId: string, topicIds: string[]): Pro
 
 export async function getUserFeed(userId: string, limit: number = 20): Promise<Article[]> {
   try {
-    // Try the RPC function first
+    // The get_user_feed RPC returns ranked article IDs, not full article objects.
+    // We need a second query to fetch the full article data.
     const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_user_feed`, {
       method: 'POST',
       headers,
@@ -115,13 +116,30 @@ export async function getUserFeed(userId: string, limit: number = 20): Promise<A
 
     if (response.ok) {
       const data = await response.json();
-      console.log('Feed response:', data);
-      if (Array.isArray(data)) {
-        return data.map((a: Record<string, unknown>) => normalizeArticle(a));
+      console.log('Feed RPC response:', data);
+
+      if (Array.isArray(data) && data.length > 0) {
+        // Extract article IDs from the RPC response
+        const ids = data.map((r: Record<string, unknown>) =>
+          (r.article_id ?? r.id) as string
+        ).filter(Boolean);
+
+        if (ids.length > 0) {
+          // Fetch full article objects by ID
+          const articleResponse = await fetch(
+            `${SUPABASE_URL}/rest/v1/ai_articles?select=id,headline,publication,published_at,ai_preview,consensus_signal,extracted_tickers,source_url&id=in.(${ids.map(encodeURIComponent).join(',')})&order=published_at.desc`,
+            { headers }
+          );
+
+          if (articleResponse.ok) {
+            const articles = await articleResponse.json();
+            console.log('Feed articles fetched:', articles.length);
+            return articles;
+          }
+        }
       }
-      return data;
     }
-    
+
     console.warn('RPC function failed, falling back to direct query');
   } catch (error) {
     console.warn('RPC function error, falling back to direct query:', error);

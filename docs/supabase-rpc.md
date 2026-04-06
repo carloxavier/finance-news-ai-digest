@@ -19,21 +19,24 @@
 { "p_user_id": "<uuid>", "p_limit": 20 }
 ```
 
-**Returns:** `Article[]` (flat array)
+**Returns:** Ranked article IDs (NOT full article objects)
+
+> **WARNING:** Despite the reference doc suggesting full articles, this RPC
+> returns only IDs with a relevance score. A second query to `ai_articles`
+> is required to get full article data. See `getSubscriberArticles()` in
+> `supabase/functions/send-digest/index.ts` for the canonical two-step pattern.
 
 ```json
 [
-  {
-    "id": "uuid",
-    "headline": "string",
-    "publication": "string",
-    "published_at": "2026-04-05T16:00:00+00:00",
-    "ai_preview": "string",
-    "consensus_signal": "BUY | SELL | MIXED | NO_RATING",
-    "extracted_tickers": ["NVDA", "MU"],
-    "source_url": "https://..."
-  }
+  { "article_id": "uuid" },
+  { "article_id": "uuid" }
 ]
+```
+
+The frontend must then fetch full articles:
+```
+GET /rest/v1/ai_articles?id=in.(id1,id2,...)&select=id,headline,publication,...
+```
 ```
 
 **Frontend consumer:** `getUserFeed()` in `supabase.ts` -> normalized via `normalizeArticle()`
