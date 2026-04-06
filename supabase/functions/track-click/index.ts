@@ -6,7 +6,7 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const FALLBACK_URL = "https://finnopolis.com";
+const FALLBACK_URL = "https://carloxavier.github.io/finance-news-ai-digest";
 
 Deno.serve(async (req: Request) => {
   const token = new URL(req.url).searchParams.get("t");
@@ -14,10 +14,10 @@ Deno.serve(async (req: Request) => {
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-  // Look up the sent article record
+  // Look up the sent article record and the subscriber's feed token
   const { data: sent } = await supabase
     .from("digest_sent_articles")
-    .select("id, subscriber_id, article_id")
+    .select("id, subscriber_id, article_id, subscriber:digest_subscribers!subscriber_id(feed_token)")
     .eq("click_token", token)
     .single();
 
@@ -35,6 +35,8 @@ Deno.serve(async (req: Request) => {
     console.error("Failed to log click:", err.message);
   });
 
-  // Redirect to Finnopolis article detail page, not the original source
-  return Response.redirect(`${FALLBACK_URL}/article/${sent.article_id}`, 302);
+  // Redirect to article detail page with feed token so the app can authenticate the user
+  const feedToken = (sent.subscriber as any)?.feed_token;
+  const tokenParam = feedToken ? `?t=${feedToken}` : "";
+  return Response.redirect(`${FALLBACK_URL}/article/${sent.article_id}${tokenParam}`, 302);
 });

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router";
+import { useParams, useNavigate, useSearchParams } from "react-router";
 import { getArticleDetail, checkWaitlistStatus, joinAiAgentWaitlist, getUserDigestEmail, formatArticleDate, type ArticleDetail as ArticleDetailType } from "../utils/supabase";
 import { ArrowLeft, ExternalLink, AlertTriangle, Sparkles } from "lucide-react";
 import { AnalystDataSection } from "./AnalystDataSection";
@@ -11,11 +11,12 @@ import {
   DialogDescription,
   DialogFooter,
 } from "./ui/dialog";
-import { getUserId } from "../utils/userId";
+import { getUserId, setFeedToken, setOnboardingComplete } from "../utils/userId";
 
 export function ArticleDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [article, setArticle] = useState<ArticleDetailType | null>(null);
   const [loading, setLoading] = useState(true);
   const [showAiModal, setShowAiModal] = useState(false);
@@ -24,6 +25,16 @@ export function ArticleDetail() {
   const [alreadyOnWaitlist, setAlreadyOnWaitlist] = useState(false);
   const [joinSuccess, setJoinSuccess] = useState(false);
   const [joining, setJoining] = useState(false);
+
+  // If arriving from an email link with a feed token, store it so the user
+  // can navigate to their feed without going through onboarding again.
+  useEffect(() => {
+    const token = searchParams.get("t");
+    if (token) {
+      setFeedToken(token);
+      setOnboardingComplete();
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     if (!id) return;
