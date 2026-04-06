@@ -1,61 +1,39 @@
-**Add your own guidelines here**
-<!--
+# Project Guidelines
 
-System Guidelines
+## Architecture
 
-Use this file to provide the AI with rules and guidelines you want it to follow.
-This template outlines a few examples of things you can add. You can add your own sections and format it to suit your needs
+See detailed docs in `/docs/`:
+- [architecture.md](../docs/architecture.md) — System diagram, email-to-app flow, invariants
+- [supabase-rpc.md](../docs/supabase-rpc.md) — RPC response shapes, DB schema
+- [deploy-edge-functions.md](../docs/deploy-edge-functions.md) — Edge Function deployment, testing, pitfalls
 
-TIP: More context isn't always better. It can confuse the LLM. Try and add the most important rules you need
+## Critical Rules
 
-# General guidelines
+### Email Digest & Feed Consistency
+1. **Both the web feed and email digest must use `get_subscriber_feed` RPC.** Never use `get_user_feed` for digest emails — it has different ranking and caching.
+2. **Upserts to `digest_sent_articles` must use `ignoreDuplicates: false`.** Otherwise re-sent digests have mismatched click tokens and tracking breaks.
+3. **`track-click` must pass `?t=<feed_token>` in the redirect URL.** Without it, users land on onboarding instead of their feed.
 
-Any general rules you want the AI to follow.
-For example:
+### Base URL
+All app URLs must use `https://carloxavier.github.io/finance-news-ai-digest`. This is configured in:
+- `vite.config.ts` (`base`)
+- `routes.ts` (`basename`)
+- `track-click/index.ts` (`FALLBACK_URL`)
+- `send-digest/index.ts` (`SITE_BASE_URL`)
 
-* Only use absolute positioning when necessary. Opt for responsive and well structured layouts that use flexbox and grid by default
-* Refactor code as you go to keep code clean
-* Keep file sizes small and put helper functions and components in their own files.
+Never hardcode `finnopolis.com` as a redirect target.
 
---------------
+### SQL / RPC
+- Never use `DISTINCT ON` with a `LIMIT` unless the `ORDER BY` matches the intended sort. Use a subquery to deduplicate first, then sort and limit.
+- Always pass article data through `normalizeArticle()` before rendering — field names vary between RPCs.
 
-# Design system guidelines
-Rules for how the AI should make generations look like your company's design system
+### Edge Functions
+- All Edge Functions use `verify_jwt=false` (public endpoints for email links/webhooks).
+- Deploy via Supabase MCP (`deploy_edge_function`). Local files in `supabase/functions/` are source of truth.
+- Required secret for send-digest: `RESEND_API_KEY`.
 
-Additionally, if you select a design system to use in the prompt box, you can reference
-your design system's components, tokens, variables and components.
-For example:
+## Frontend Patterns
 
-* Use a base font-size of 14px
-* Date formats should always be in the format “Jun 10”
-* The bottom toolbar should only ever have a maximum of 4 items
-* Never use the floating action button with the bottom toolbar
-* Chips should always come in sets of 3 or more
-* Don't use a dropdown if there are 2 or fewer options
-
-You can also create sub sections and add more specific details
-For example:
-
-
-## Button
-The Button component is a fundamental interactive element in our design system, designed to trigger actions or navigate
-users through the application. It provides visual feedback and clear affordances to enhance user experience.
-
-### Usage
-Buttons should be used for important actions that users need to take, such as form submissions, confirming choices,
-or initiating processes. They communicate interactivity and should have clear, action-oriented labels.
-
-### Variants
-* Primary Button
-  * Purpose : Used for the main action in a section or page
-  * Visual Style : Bold, filled with the primary brand color
-  * Usage : One primary button per section to guide users toward the most important action
-* Secondary Button
-  * Purpose : Used for alternative or supporting actions
-  * Visual Style : Outlined with the primary color, transparent background
-  * Usage : Can appear alongside a primary button for less important actions
-* Tertiary Button
-  * Purpose : Used for the least important actions
-  * Visual Style : Text-only with no border, using primary color
-  * Usage : For actions that should be available but not emphasized
--->
+- **Feed token persistence**: Once a user visits via `?t=token`, the token is saved to localStorage permanently. All subsequent visits use the subscriber feed path.
+- **Date formatting**: Always use `formatArticleDate()` from `supabase.ts`. Never call `new Date()` directly on article date fields.
+- **Null safety on arrays**: Always use `(array ?? [])` before `.slice()`, `.map()`, etc. — fields like `extracted_tickers` can be null.

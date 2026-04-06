@@ -1,15 +1,27 @@
 import { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router";
+import { useParams, useNavigate, useSearchParams } from "react-router";
 import { getArticleDetail, type ArticleDetail as ArticleDetailType } from "../utils/supabase";
 import { formatDistanceToNow } from "date-fns";
 import { ArrowLeft, ExternalLink, AlertTriangle } from "lucide-react";
 import { AnalystDataSection } from "./AnalystDataSection";
+import { setFeedToken, setOnboardingComplete } from "../utils/userId";
 
 export function ArticleDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [article, setArticle] = useState<ArticleDetailType | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // If arriving from an email link with a feed token, store it so the user
+  // can navigate to their feed without going through onboarding again.
+  useEffect(() => {
+    const token = searchParams.get("t");
+    if (token) {
+      setFeedToken(token);
+      setOnboardingComplete();
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     if (!id) return;

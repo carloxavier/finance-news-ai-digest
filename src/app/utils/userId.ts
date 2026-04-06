@@ -18,3 +18,15 @@ export function setOnboardingComplete(): void {
 export function resetOnboarding(): void {
   localStorage.removeItem('fad_onboarding_complete');
 }
+
+export function getFeedToken(): string | null {
+  return localStorage.getItem('fad_feed_token');
+}
+
+export function setFeedToken(token: string): void {
+  localStorage.setItem('fad_feed_token', token);
+}
+
+export function clearFeedToken(): void {
+  localStorage.removeItem('fad_feed_token');
+}

@@ -144,7 +144,7 @@ export function Feed() {
                 <div className="flex items-center justify-between flex-wrap gap-3">
                   {/* Tickers */}
                   <div className="flex flex-wrap gap-2">
-                    {article.extracted_tickers.slice(0, 4).map((ticker) => (
+                    {(article.extracted_tickers ?? []).slice(0, 4).map((ticker) => (
                       <span
                         key={ticker}
                         className="px-2 py-1 bg-white/5 border border-white/10 rounded text-xs"
@@ -153,7 +153,7 @@ export function Feed() {
                         {ticker}
                       </span>
                     ))}
-                    {article.extracted_tickers.length > 4 && (
+                    {(article.extracted_tickers ?? []).length > 4 && (
                       <span className="px-2 py-1 text-xs text-white/40">
                         +{article.extracted_tickers.length - 4} more
                       </span>
