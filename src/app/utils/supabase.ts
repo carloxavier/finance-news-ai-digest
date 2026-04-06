@@ -208,12 +208,12 @@ export async function saveUserTickers(userId: string, tickers: string[]): Promis
   console.log('Saved tickers for user:', userId, 'tickers:', tickers);
 }
 
-export async function saveDigestSubscription(userId: string, email: string, frequency: 'daily' | 'weekly'): Promise<void> {
-  const response = await fetch(`${SUPABASE_URL}/rest/v1/digest_subscribers?on_conflict=email`, {
+export async function saveDigestSubscription(userId: string, email: string, frequency: 'daily' | 'weekly'): Promise<{ id: string } | null> {
+  const response = await fetch(`${SUPABASE_URL}/rest/v1/digest_subscribers?on_conflict=email&select=id`, {
     method: 'POST',
     headers: {
       ...headers,
-      'Prefer': 'return=minimal,resolution=merge-duplicates',
+      'Prefer': 'return=representation,resolution=merge-duplicates',
     },
     body: JSON.stringify({
       user_id: userId,
@@ -229,7 +229,20 @@ export async function saveDigestSubscription(userId: string, email: string, freq
     throw new Error(`Failed to save digest subscription: ${response.status}`);
   }
 
+  const data = await response.json();
   console.log('Saved digest subscription for user:', userId, 'email:', email, 'frequency:', frequency);
+  return data?.[0] ?? null;
+}
+
+export async function triggerWelcomeEmail(subscriberId: string): Promise<void> {
+  fetch(`${SUPABASE_URL}/functions/v1/send-welcome`, {
+    method: 'POST',
+    headers: {
+      ...headers,
+      'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+    },
+    body: JSON.stringify({ subscriber_id: subscriberId }),
+  }).catch(() => {}); // Fire-and-forget
 }
 
 export async function getUserDigestEmail(userId: string): Promise<string | null> {

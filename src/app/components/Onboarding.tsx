@@ -7,6 +7,7 @@ import {
   saveDigestSubscription,
   saveOnboardingSurvey,
   getSubscriberFeed,
+  triggerWelcomeEmail,
   type Topic,
 } from "../utils/supabase";
 import { getUserId, hasCompletedOnboarding, setOnboardingComplete, setFeedToken } from "../utils/userId";
@@ -134,7 +135,10 @@ export function Onboarding() {
 
       // Save email subscription if valid email was entered
       if (email && isValidEmail(email)) {
-        await saveDigestSubscription(userId, email, frequency);
+        const subscriber = await saveDigestSubscription(userId, email, frequency);
+        if (subscriber?.id) {
+          triggerWelcomeEmail(subscriber.id);
+        }
       }
 
       setOnboardingComplete();
