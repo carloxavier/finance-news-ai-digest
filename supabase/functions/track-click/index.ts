@@ -1,5 +1,5 @@
 // track-click Edge Function
-// GET ?t={click_token} → log click → 302 redirect to article source_url
+// GET ?t={click_token} → log click → 302 redirect to Finnopolis article detail page
 // Deployed with verify_jwt=false (public endpoint, used in email links)
 
 import { createClient } from "npm:@supabase/supabase-js@2";
@@ -23,13 +23,6 @@ Deno.serve(async (req: Request) => {
 
   if (!sent) return Response.redirect(FALLBACK_URL, 302);
 
-  // Get the article's source URL
-  const { data: article } = await supabase
-    .from("ai_articles")
-    .select("source_url")
-    .eq("id", sent.article_id)
-    .single();
-
   // Log click (fire-and-forget, don't block the redirect)
   supabase.from("article_clicks").insert({
     subscriber_id: sent.subscriber_id,
@@ -42,5 +35,6 @@ Deno.serve(async (req: Request) => {
     console.error("Failed to log click:", err.message);
   });
 
-  return Response.redirect(article?.source_url ?? FALLBACK_URL, 302);
+  // Redirect to Finnopolis article detail page, not the original source
+  return Response.redirect(`${FALLBACK_URL}/article/${sent.article_id}`, 302);
 });
