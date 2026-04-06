@@ -138,10 +138,20 @@ export async function getUserFeed(userId: string, limit: number = 20): Promise<A
   }
 
   const interests = await interestsResponse.json();
-  
+
   if (interests.length === 0) {
-    // No interests set, return empty feed
-    return [];
+    // No interests set — show latest articles instead of empty feed.
+    // This covers email-link users who skipped onboarding.
+    const fallbackResponse = await fetch(
+      `${SUPABASE_URL}/rest/v1/ai_articles?select=id,headline,publication,published_at,ai_preview,consensus_signal,extracted_tickers,source_url&limit=${limit}&order=published_at.desc`,
+      { headers }
+    );
+    if (!fallbackResponse.ok) return [];
+    const fallbackArticles = await fallbackResponse.json();
+    console.log('Feed response (no interests, showing latest):', fallbackArticles);
+    return Array.isArray(fallbackArticles)
+      ? fallbackArticles.map((a: Record<string, unknown>) => normalizeArticle(a))
+      : fallbackArticles;
   }
 
   const topicIds = interests.map((i: any) => i.topic_id);
