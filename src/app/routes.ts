@@ -3,6 +3,7 @@ import { Root } from "./components/Root";
 import { Onboarding } from "./components/Onboarding";
 import { Feed } from "./components/Feed";
 import { ArticleDetail } from "./components/ArticleDetail";
+import { Unsubscribe } from "./components/Unsubscribe";
 
 export const router = createBrowserRouter([
   {
@@ -12,6 +13,7 @@ export const router = createBrowserRouter([
       { index: true, Component: Onboarding },
       { path: "feed", Component: Feed },
       { path: "article/:id", Component: ArticleDetail },
+      { path: "unsubscribe", Component: Unsubscribe },
     ],
   },
 ], {
