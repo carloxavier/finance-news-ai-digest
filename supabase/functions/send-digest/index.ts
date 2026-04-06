@@ -52,20 +52,38 @@ function generateClickToken(): string {
 
 // ─── Main handler ────────────────────────────────────────────────────
 
-Deno.serve(async (_req: Request) => {
+Deno.serve(async (req: Request) => {
   try {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
+    // Optional: force-send to a specific email (bypasses timing checks)
+    let forceEmail: string | null = null;
+    try {
+      const body = await req.json();
+      if (body?.email) forceEmail = body.email.toLowerCase().trim();
+    } catch {
+      // No body or invalid JSON — normal cron invocation
+    }
+
     // 1. Get subscribers due for a send
-    const { data: subscribers, error: subError } = await supabase
+    let query = supabase
       .from("digest_subscribers")
       .select("id, user_id, email, frequency, unsubscribe_token, feed_token")
-      .eq("is_active", true)
-      .or(
+      .eq("is_active", true);
+
+    if (forceEmail) {
+      // Force-send: target a specific subscriber, ignore timing
+      query = query.eq("email", forceEmail);
+    } else {
+      // Normal cron: only subscribers due based on frequency
+      query = query.or(
         "last_sent_at.is.null," +
         "and(frequency.eq.daily,last_sent_at.lt." + hoursAgo(20) + ")," +
         "and(frequency.eq.weekly,last_sent_at.lt." + daysAgo(6) + ")"
       );
+    }
+
+    const { data: subscribers, error: subError } = await query;
 
     if (subError) {
       console.error("Error fetching subscribers:", subError);
