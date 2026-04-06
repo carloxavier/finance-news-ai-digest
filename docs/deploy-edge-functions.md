@@ -2,45 +2,97 @@
 
 ## Overview
 
-Two Edge Functions need to be deployed to Supabase to complete the bug fix. Both have already been updated in the repo (`main` branch) and pushed to GitHub.
+Edge Functions are deployed via **Supabase MCP** (the `deploy_edge_function` tool). The local files in `supabase/functions/` are the source of truth.
+
+All functions use `verify_jwt=false` (they are public endpoints used in email links and webhooks).
+
+**Supabase Project ID:** `kamfamwjswkncftsdgxi`
+
+**App Base URL:** `https://carloxavier.github.io/finance-news-ai-digest`
 
 ---
 
-## 1. Deploy `track-click`
+## Functions
+
+### track-click
 
 **File:** `supabase/functions/track-click/index.ts`
 
-**What changed:** The function was redirecting email link clicks to the original article URL (e.g. cnbc.com). It now redirects to the Finnopolis article detail page (`https://finnopolis.com/article/{article_id}`).
+**Purpose:** Logs email article clicks and redirects to the app's article detail page with the subscriber's feed token.
 
-**Deploy command:**
-```bash
-supabase functions deploy track-click
-```
+**Flow:**
+1. Receives `GET ?t=<click_token>`
+2. Looks up `click_token` in `digest_sent_articles`, joins `digest_subscribers` to get `feed_token`
+3. Inserts into `article_clicks` (fire-and-forget)
+4. Redirects `302` to `<APP_BASE_URL>/article/<article_id>?t=<feed_token>`
 
----
+**Critical:** The redirect URL must include `?t=<feed_token>`. Without it, the user has no session and will see onboarding instead of their article/feed.
 
-## 2. Deploy `send-digest`
+### send-digest
 
 **File:** `supabase/functions/send-digest/index.ts`
 
-**What changed:** Added an optional `email` parameter to force-send a digest to a specific subscriber, bypassing the normal frequency/timing checks. When no body is provided (cron trigger), behavior is unchanged.
+**Purpose:** Sends personalized email digests. Triggered by pg_cron daily at 07:00 UTC, or manually via POST with `{"email": "user@example.com"}`.
 
-**Deploy command:**
+**Required secret:** `RESEND_API_KEY`
+
+**Article source:** Uses `get_subscriber_feed` RPC with `p_limit: 8`. This is the same RPC the web feed uses, ensuring email and web show the same articles.
+
+**Click token lifecycle:**
+1. Generates a unique `click_token` per article per send
+2. Embeds it in the email link: `<SUPABASE_URL>/functions/v1/track-click?t=<click_token>`
+3. Upserts to `digest_sent_articles` with `ignoreDuplicates: false` — this is critical so re-sends update the token in the DB to match the latest email
+
+### send-welcome
+
+**File:** `supabase/functions/send-welcome/index.ts`
+
+**Purpose:** Sends a welcome email after a user subscribes to the digest.
+
+### digest-webhook
+
+**File:** `supabase/functions/digest-webhook/index.ts`
+
+**Purpose:** Receives Resend webhook events (delivered, opened, bounced) and records them.
+
+### handle-unsubscribe
+
+**File:** `supabase/functions/handle-unsubscribe/index.ts`
+
+**Purpose:** One-click email unsubscribe. Sets `is_active = false` on the subscriber.
+
+---
+
+## Deploying
+
+Deploy via Supabase MCP:
+
+```
+mcp deploy_edge_function(
+  project_id: "kamfamwjswkncftsdgxi",
+  name: "<function-name>",
+  entrypoint_path: "index.ts",
+  verify_jwt: false,
+  files: [{ name: "index.ts", content: "<file contents>" }]
+)
+```
+
+Or via CLI (requires `supabase login`):
+
 ```bash
-supabase functions deploy send-digest
+supabase functions deploy <function-name> --project-ref kamfamwjswkncftsdgxi
 ```
 
 ---
 
-## 3. Test the fix
+## Testing
 
-After both functions are deployed, trigger a test digest for the user:
+Trigger a test digest (no auth needed — `verify_jwt=false`):
 
 ```bash
 curl -X POST 'https://kamfamwjswkncftsdgxi.supabase.co/functions/v1/send-digest' \
-  -H 'Authorization: Bearer <SUPABASE_SERVICE_ROLE_KEY>' \
   -H 'Content-Type: application/json' \
-  -d '{"email": "isatorrealba@gmail.com"}'
+  -d '{"email": "carlo.xavier.lopez@gmail.com"}'
 ```
 
 **Expected response:**
@@ -48,12 +100,21 @@ curl -X POST 'https://kamfamwjswkncftsdgxi.supabase.co/functions/v1/send-digest'
 { "sent": 1, "failed": 0, "total": 1, "errors": [] }
 ```
 
-**Validation:** Click an article link in the received email. It should redirect to `https://finnopolis.com/article/{article_id}` (the Finnopolis app), NOT to the original source (e.g. cnbc.com).
+**Validation checklist:**
+1. Email received with 8 articles matching the web feed
+2. Click an article link — should redirect to `<APP_BASE_URL>/article/<id>?t=<feed_token>`
+3. Article detail page loads (not onboarding)
+4. "Back to Feed" shows the personalized feed
+5. "View Full Feed" link in email goes to the web feed with the feed token
 
 ---
 
-## Notes
+## Common Pitfalls
 
-- Both functions require `verify_jwt=false` (already configured — they are public endpoints).
-- `send-digest` requires the `RESEND_API_KEY` secret to be set in Supabase.
-- The Supabase project ID is `kamfamwjswkncftsdgxi`.
+| Pitfall | What goes wrong | Prevention |
+|---------|----------------|------------|
+| `ignoreDuplicates: true` on upsert | Re-sent digest has new click tokens but DB keeps old ones → track-click can't find token → fallback redirect | Always use `ignoreDuplicates: false` |
+| Missing `?t=feed_token` in redirect | User lands on app with no session → sees onboarding | track-click must join digest_subscribers to get feed_token |
+| Using `get_user_feed` for digest | Different ranking + stale cache → email articles don't match web | Always use `get_subscriber_feed` for digest |
+| Hardcoded `finnopolis.com` base URL | Redirects to wrong domain | Use `https://carloxavier.github.io/finance-news-ai-digest` everywhere |
+| `DISTINCT ON` with wrong `ORDER BY` | `LIMIT` applied before date sort → misses newest articles | Deduplicate with subquery, then sort by date, then limit |

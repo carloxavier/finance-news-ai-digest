@@ -10,40 +10,9 @@
 
 ---
 
-## get_user_feed
+## get_subscriber_feed (PRIMARY — used by both web and email)
 
-**Call:** `POST /rest/v1/rpc/get_user_feed`
-
-**Params:**
-```json
-{ "p_user_id": "<uuid>", "p_limit": 20 }
-```
-
-**Returns:** Ranked article IDs (NOT full article objects)
-
-> **WARNING:** Despite the reference doc suggesting full articles, this RPC
-> returns only IDs with a relevance score. A second query to `ai_articles`
-> is required to get full article data. See `getSubscriberArticles()` in
-> `supabase/functions/send-digest/index.ts` for the canonical two-step pattern.
-
-```json
-[
-  { "article_id": "uuid" },
-  { "article_id": "uuid" }
-]
-```
-
-The frontend must then fetch full articles:
-```
-GET /rest/v1/ai_articles?id=in.(id1,id2,...)&select=id,headline,publication,...
-```
-```
-
-**Frontend consumer:** `getUserFeed()` in `supabase.ts` -> normalized via `normalizeArticle()`
-
----
-
-## get_subscriber_feed
+This is the **canonical feed RPC**. Both the web app (`Feed.tsx`) and the email digest (`send-digest` Edge Function) must use this RPC. Do not use `get_user_feed` for digest emails — it has different ranking logic and a stale cache.
 
 **Call:** `POST /rest/v1/rpc/get_subscriber_feed`
 
@@ -69,7 +38,8 @@ GET /rest/v1/ai_articles?id=in.(id1,id2,...)&select=id,headline,publication,...
       "ai_preview": "string",
       "consensus_signal": "BUY | SELL | MIXED | NO_RATING",
       "extracted_tickers": ["NVDA", "MU"],
-      "source_url": "https://..."
+      "source_url": "https://...",
+      "inference_watch": ["Signal 1", "Signal 2"]
     }
   ]
 }
@@ -79,9 +49,58 @@ GET /rest/v1/ai_articles?id=in.(id1,id2,...)&select=id,headline,publication,...
 
 **Frontend consumer:** `getSubscriberFeed()` in `supabase.ts` -> articles normalized via `normalizeArticle()`
 
+**Edge Function consumer:** `getSubscriberArticles()` in `send-digest/index.ts` with `p_limit: 8`
+
+**How it works internally:**
+1. Looks up subscriber by `feed_token` in `digest_subscribers`
+2. Joins `user_interests` → `article_topics` → `ai_articles` to find matching articles
+3. Deduplicates (an article can match multiple topics)
+4. Sorts by `published_at DESC`
+5. Limits to `p_limit`
+
 > **WARNING:** The articles inside this response are JSONB-built on the server.
 > Field names may not exactly match the `get_user_feed` response. Always pass
 > through `normalizeArticle()`.
+
+---
+
+## get_user_feed
+
+Used by **direct visitors** (no feed token) who completed onboarding.
+
+**Call:** `POST /rest/v1/rpc/get_user_feed`
+
+**Params:**
+```json
+{ "p_user_id": "<uuid>", "p_limit": 20 }
+```
+
+**Returns:** Ranked article IDs (NOT full article objects)
+
+```json
+[
+  { "article_id": "uuid" },
+  { "article_id": "uuid" }
+]
+```
+
+The frontend must then fetch full articles:
+```
+GET /rest/v1/ai_articles?id=in.(id1,id2,...)&select=id,headline,publication,...
+```
+
+**Frontend consumer:** `getUserFeed()` in `supabase.ts` -> normalized via `normalizeArticle()`
+
+**How it works internally:**
+1. Checks `user_feed_cache` for a valid cached result
+2. If no cache: joins `user_interests` → `article_topics` → `ai_articles`
+3. Ranks by `is_primary DESC, relevance DESC, published_at DESC`
+4. Writes result to cache
+5. Returns article IDs only
+
+> **WARNING — do NOT use for email digest:** This RPC has different ranking logic
+> (relevance-based, not purely chronological) and uses a cache that can go stale.
+> The email digest must use `get_subscriber_feed` so articles match the web feed.
 
 ---
 
@@ -94,7 +113,7 @@ GET /rest/v1/ai_articles?id=in.(id1,id2,...)&select=id,headline,publication,...
 { "topic_ids": ["uuid", "uuid"], "max_results": 20 }
 ```
 
-**Returns:** `Article[]` (flat array, same shape as `get_user_feed`)
+**Returns:** `Article[]` (flat array)
 
 **Frontend consumer:** `getUserFeed()` fallback path in `supabase.ts` -> normalized via `normalizeArticle()`
 
@@ -109,7 +128,7 @@ GET /rest/v1/ai_articles?id=in.(id1,id2,...)&select=id,headline,publication,...
 | `id` | uuid | no | Primary key |
 | `headline` | text | no | Article title |
 | `publication` | text | no | Source name (e.g. "CNBC") |
-| `published_at` | timestamptz | no | All 165 complete articles have valid timestamps |
+| `published_at` | timestamptz | no | All complete articles have valid timestamps |
 | `ai_preview` | text | no | One-line AI summary |
 | `consensus_signal` | text | no | BUY, SELL, MIXED, or NO_RATING |
 | `extracted_tickers` | text[] | yes | Can be null or empty array |
@@ -120,7 +139,7 @@ GET /rest/v1/ai_articles?id=in.(id1,id2,...)&select=id,headline,publication,...
 | `inference_watch` | text[] | yes | "What to watch" bullets |
 | `inference_risks` | text[] | yes | "Key risks" bullets |
 | `inference_questions` | text[] | yes | "Open questions" bullets |
-| `finnhub_fetched_at` | timestamptz | **yes** | NULL on ~60% of articles (by design) |
+| `finnhub_fetched_at` | timestamptz | yes | NULL on ~60% of articles (by design) |
 | `processing_status` | text | no | "complete", "pending", etc. |
 
 ### digest_subscribers
@@ -132,5 +151,27 @@ GET /rest/v1/ai_articles?id=in.(id1,id2,...)&select=id,headline,publication,...
 | `email` | text | no | Unique |
 | `frequency` | text | no | "daily" or "weekly" |
 | `feed_token` | text | yes | Stateless session token for email links |
+| `unsubscribe_token` | text | yes | Token for one-click unsubscribe |
 | `is_active` | boolean | no | Unsubscribe sets to false |
 | `last_sent_at` | timestamptz | yes | NULL until first digest sent |
+
+### digest_sent_articles
+
+| Column | Type | Nullable | Notes |
+|--------|------|----------|-------|
+| `id` | serial | no | Primary key |
+| `subscriber_id` | uuid | no | FK to digest_subscribers |
+| `article_id` | uuid | no | FK to ai_articles |
+| `click_token` | text | no | Unique token embedded in email link |
+| `digest_batch` | text | no | Batch ID (e.g. "digest-20260407-0700") |
+
+**Unique constraint:** `(subscriber_id, article_id)` — upsert must use `ignoreDuplicates: false` to update click_token on re-send.
+
+### article_clicks
+
+| Column | Type | Nullable | Notes |
+|--------|------|----------|-------|
+| `subscriber_id` | uuid | no | FK to digest_subscribers |
+| `article_id` | uuid | no | FK to ai_articles |
+| `sent_article_id` | int | no | FK to digest_sent_articles |
+| `source` | text | no | "email" |
