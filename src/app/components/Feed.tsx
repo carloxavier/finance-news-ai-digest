@@ -2,12 +2,13 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { getUserFeed, getSubscriberFeed, formatArticleDate, type Article } from "../utils/supabase";
 import { getUserId, hasCompletedOnboarding, resetOnboarding, getFeedToken, clearFeedToken } from "../utils/userId";
-import { TrendingUp, TrendingDown, Minus, AlertCircle, Settings } from "lucide-react";
+import { TrendingUp, TrendingDown, Minus, AlertCircle, Settings, AlertTriangle } from "lucide-react";
 
 export function Feed() {
   const navigate = useNavigate();
   const [articles, setArticles] = useState<Article[]>([]);
   const [loading, setLoading] = useState(true);
+  const [dataIssue, setDataIssue] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -18,20 +19,25 @@ export function Feed() {
     }
 
     // Load feed — prefer feed token (from email links) over user ID
-    // Filter out articles that have no displayable content
-    const filterValid = (articles: Article[]) =>
-      articles.filter(a => a.headline || a.ai_preview);
+    // Detect articles that came back from the API but have no displayable content
+    const handleArticles = (articles: Article[]) => {
+      setArticles(articles);
+      if (articles.length > 0 && articles.every(a => !a.headline && !a.ai_preview)) {
+        console.error('[Feed] Data shape issue: received', articles.length, 'articles but none have headline or ai_preview. First article:', JSON.stringify(articles[0]));
+        setDataIssue(true);
+      }
+    };
 
     const feedToken = getFeedToken();
     if (feedToken) {
       getSubscriberFeed(feedToken)
         .then((feed) => {
           if (feed) {
-            setArticles(filterValid(feed.articles));
+            handleArticles(feed.articles);
           } else {
             // Token invalid — clear it and fall back to user ID feed
             clearFeedToken();
-            return getUserFeed(getUserId()).then(a => setArticles(filterValid(a)));
+            return getUserFeed(getUserId()).then(handleArticles);
           }
         })
         .catch((err) => {
@@ -41,7 +47,7 @@ export function Feed() {
         .finally(() => setLoading(false));
     } else {
       getUserFeed(getUserId())
-        .then(a => setArticles(filterValid(a)))
+        .then(handleArticles)
         .catch((err) => {
           console.error("Feed error:", err);
           setError(err.message || "Failed to load feed");
@@ -103,6 +109,41 @@ export function Feed() {
           >
             Reset Preferences
           </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (dataIssue) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center max-w-md px-6">
+          <AlertTriangle className="w-12 h-12 text-yellow-400 mx-auto mb-4" />
+          <h2 className="text-xl text-white mb-3" style={{ fontFamily: 'var(--font-headline)' }}>
+            Feed temporarily unavailable
+          </h2>
+          <p className="text-white/60 text-sm mb-3">
+            We received your articles but they arrived in an unexpected format.
+            This is a known issue our team is actively fixing.
+          </p>
+          <p className="text-white/40 text-xs mb-6" style={{ fontFamily: 'var(--font-mono)' }}>
+            Error: DATA_SHAPE_MISMATCH — {articles.length} article(s) received, 0 displayable.
+            Check browser console for raw response data.
+          </p>
+          <div className="flex gap-3 justify-center">
+            <button
+              onClick={() => window.location.reload()}
+              className="px-6 py-2 bg-[var(--layer1-blue)] hover:bg-[var(--layer1-blue)]/90 rounded-lg transition-colors text-sm"
+            >
+              Retry
+            </button>
+            <button
+              onClick={() => { clearFeedToken(); handleResetPreferences(); }}
+              className="px-6 py-2 bg-white/10 hover:bg-white/15 rounded-lg transition-colors text-sm text-white/70"
+            >
+              Reset Preferences
+            </button>
+          </div>
         </div>
       </div>
     );

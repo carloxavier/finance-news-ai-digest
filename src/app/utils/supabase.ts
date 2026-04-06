@@ -409,10 +409,15 @@ export async function getSubscriberFeed(token: string, limit: number = 20): Prom
 
   if (!response.ok) return null;
   const data = await response.json();
+  console.log('[getSubscriberFeed] Raw RPC response:', JSON.stringify(data).slice(0, 2000));
   if (data?.error === 'not_found') return null;
 
   // Normalize articles to ensure consistent field names
   if (data?.articles && Array.isArray(data.articles)) {
+    if (data.articles.length > 0) {
+      console.log('[getSubscriberFeed] First raw article keys:', Object.keys(data.articles[0]));
+      console.log('[getSubscriberFeed] First raw article:', JSON.stringify(data.articles[0]).slice(0, 1000));
+    }
     data.articles = data.articles.map((a: Record<string, unknown>) => normalizeArticle(a));
   }
 
