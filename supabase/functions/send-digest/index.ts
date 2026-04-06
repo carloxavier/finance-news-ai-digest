@@ -144,7 +144,7 @@ Deno.serve(async (req: Request) => {
 
         await supabase
           .from("digest_sent_articles")
-          .upsert(sentRecords, { onConflict: "subscriber_id,article_id", ignoreDuplicates: true });
+          .upsert(sentRecords, { onConflict: "subscriber_id,article_id", ignoreDuplicates: false });
 
         // Update last_sent_at
         await supabase
