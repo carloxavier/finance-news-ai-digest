@@ -1,15 +1,15 @@
 import { useState, useEffect } from "react";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { getUserId } from "../utils/userId";
 import { saveDigestSubscription } from "../utils/supabase";
 import "../../styles/landing.css";
 
 export function Landing() {
+  const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
-  const [showExploreLink, setShowExploreLink] = useState(false);
   const [navScrolled, setNavScrolled] = useState(false);
 
   // Nav scroll shadow
@@ -37,13 +37,13 @@ export function Landing() {
     return () => obs.disconnect();
   }, []);
 
-  // Show explore link 2s after signup
+  // Auto-redirect to onboarding after successful signup
   useEffect(() => {
     if (submitted) {
-      const t = setTimeout(() => setShowExploreLink(true), 2000);
+      const t = setTimeout(() => navigate("/onboarding"), 1500);
       return () => clearTimeout(t);
     }
-  }, [submitted]);
+  }, [submitted, navigate]);
 
   async function handleSignup(e: React.FormEvent) {
     e.preventDefault();
@@ -322,24 +322,14 @@ export function Landing() {
               onFocus={(e) => (e.target.style.borderColor = "var(--layer1-blue)")}
               onBlur={(e) => (e.target.style.borderColor = "rgba(255,255,255,0.1)")}
             />
-            {!showExploreLink ? (
-              <button
-                type="submit"
-                disabled={submitting || submitted}
-                className="px-7 py-3.5 text-[0.85rem] font-semibold uppercase tracking-wide rounded-md text-white border-none cursor-pointer transition-all hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(59,130,246,0.3)] whitespace-nowrap disabled:cursor-not-allowed"
-                style={{ background: submitted ? "#22c55e" : "var(--layer1-blue)" }}
-              >
-                {submitting ? "Subscribing..." : submitted ? "You're in! \u{1F389}" : "Subscribe Free"}
-              </button>
-            ) : (
-              <Link
-                to="/onboarding"
-                className="px-7 py-3.5 text-[0.85rem] font-semibold rounded-md text-white no-underline transition-all hover:-translate-y-0.5 flex items-center whitespace-nowrap"
-                style={{ background: "var(--layer1-blue)" }}
-              >
-                Explore the feed &rarr;
-              </Link>
-            )}
+            <button
+              type="submit"
+              disabled={submitting || submitted}
+              className="px-7 py-3.5 text-[0.85rem] font-semibold uppercase tracking-wide rounded-md text-white border-none cursor-pointer transition-all hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(59,130,246,0.3)] whitespace-nowrap disabled:cursor-not-allowed"
+              style={{ background: submitted ? "#22c55e" : "var(--layer1-blue)" }}
+            >
+              {submitting ? "Subscribing..." : submitted ? "Taking you to setup..." : "Subscribe Free"}
+            </button>
           </form>
 
           {error && (
