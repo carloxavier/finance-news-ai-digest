@@ -269,6 +269,17 @@ export async function saveDigestSubscription(userId: string, email: string, freq
     }
   }
 
+  // Deactivate any prior subscriptions for this user (different emails)
+  // so they don't receive duplicate digests
+  await fetch(
+    `${SUPABASE_URL}/rest/v1/digest_subscribers?user_id=eq.${userId}&email=neq.${encodeURIComponent(normalizedEmail)}&is_active=eq.true`,
+    {
+      method: 'PATCH',
+      headers: { ...headers, 'Prefer': 'return=minimal' },
+      body: JSON.stringify({ is_active: false }),
+    }
+  );
+
   const response = await fetch(`${SUPABASE_URL}/rest/v1/digest_subscribers?on_conflict=email&select=id`, {
     method: 'POST',
     headers: {
@@ -308,7 +319,7 @@ export async function triggerWelcomeEmail(subscriberId: string): Promise<void> {
 export async function getUserDigestEmail(userId: string): Promise<string | null> {
   try {
     const response = await fetch(
-      `${SUPABASE_URL}/rest/v1/digest_subscribers?user_id=eq.${userId}&is_active=eq.true&select=email&limit=1`,
+      `${SUPABASE_URL}/rest/v1/digest_subscribers?user_id=eq.${userId}&is_active=eq.true&select=email&order=subscribed_at.desc&limit=1`,
       { headers }
     );
     if (!response.ok) return null;
