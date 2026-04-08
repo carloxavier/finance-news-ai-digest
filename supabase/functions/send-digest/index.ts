@@ -22,7 +22,7 @@ interface Subscriber {
   email: string;
   frequency: string;
   unsubscribe_token: string;
-  feed_token: string;
+  feed_token: string | null;
 }
 
 interface Article {
@@ -176,22 +176,47 @@ Deno.serve(async (req: Request) => {
 
 async function getSubscriberArticles(
   supabase: ReturnType<typeof createClient>,
-  feedToken: string
+  feedToken: string | null
 ): Promise<Article[]> {
-  // Use the same RPC as the web feed so digest articles match what the user sees
-  const { data, error } = await supabase.rpc("get_subscriber_feed", {
-    p_token: feedToken,
-    p_limit: 8,
-  });
+  // Try the personalized feed RPC first (requires feed_token + user_interests)
+  if (feedToken) {
+    try {
+      const { data, error } = await supabase.rpc("get_subscriber_feed", {
+        p_token: feedToken,
+        p_limit: 8,
+      });
 
-  if (error) throw new Error(`get_subscriber_feed failed: ${error.message}`);
-  if (!data || data.error === "not_found") return [];
+      if (!error && data && data.error !== "not_found") {
+        const articles = data.articles;
+        if (Array.isArray(articles) && articles.length > 0) {
+          return articles.map((a: Record<string, unknown>) => ({
+            id: a.id as string,
+            headline: a.headline as string,
+            publication: a.publication as string,
+            published_at: a.published_at as string,
+            ai_preview: a.ai_preview as string,
+            consensus_signal: a.consensus_signal as string,
+            extracted_tickers: (a.extracted_tickers ?? []) as string[],
+            inference_watch: (a.inference_watch ?? []) as string[],
+          }));
+        }
+      }
+    } catch (err) {
+      console.warn("Personalized feed failed, falling back to latest articles:", err);
+    }
+  }
 
-  const articles = data.articles;
-  if (!Array.isArray(articles)) return [];
+  // Fallback: fetch latest articles for subscribers with no feed_token or no interests
+  console.log("Using fallback: fetching latest articles");
+  const { data: latestArticles, error: latestError } = await supabase
+    .from("ai_articles")
+    .select("id, headline, publication, published_at, ai_preview, consensus_signal, extracted_tickers, inference_watch")
+    .order("published_at", { ascending: false })
+    .limit(8);
 
-  // The RPC returns most fields but may lack inference_watch; fill in defaults
-  return articles.map((a: Record<string, unknown>) => ({
+  if (latestError || !latestArticles) return [];
+
+  return latestArticles.map((a: Record<string, unknown>) => ({
     id: a.id as string,
     headline: a.headline as string,
     publication: a.publication as string,
