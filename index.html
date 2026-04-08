@@ -4,7 +4,21 @@
     <head>
       <meta charset="UTF-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-      <title>Financial News Feed App</title>
+      <title>Finnopolis — AI-Curated Financial Intelligence, Daily</title>
+      <meta name="description" content="Stop drowning in financial noise. Finnopolis uses AI to surface the stories that actually matter to your portfolio — delivered to your inbox every morning." />
+      <script>
+        // Handle SPA redirect from 404.html (GitHub Pages)
+        (function(l) {
+          if (l.search[1] === '/') {
+            var decoded = l.search.slice(1).split('&').map(function(s) {
+              return s.replace(/~and~/g, '&')
+            }).join('?');
+            window.history.replaceState(null, null,
+              l.pathname.slice(0, -1) + decoded + l.hash
+            );
+          }
+        }(window.location));
+      </script>
     </head>
 
     <body>
