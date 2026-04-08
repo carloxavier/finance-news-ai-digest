@@ -8,6 +8,7 @@ import {
   saveOnboardingSurvey,
   getSubscriberFeed,
   triggerWelcomeEmail,
+  getUserDigestEmail,
   type Topic,
 } from "../utils/supabase";
 import { getUserId, hasCompletedOnboarding, setOnboardingComplete, setFeedToken } from "../utils/userId";
@@ -57,6 +58,7 @@ export function Onboarding() {
   // Step 4 — Tickers + Email
   const [tickerInput, setTickerInput] = useState("");
   const [email, setEmail] = useState("");
+  const [existingEmail, setExistingEmail] = useState<string | null>(null);
   const [frequency, setFrequency] = useState<"daily" | "weekly">("daily");
 
   useEffect(() => {
@@ -89,6 +91,14 @@ export function Onboarding() {
       .then(setTopics)
       .catch(console.error)
       .finally(() => setLoading(false));
+
+    // Pre-fill email if user already subscribed from landing page
+    getUserDigestEmail(getUserId()).then((existing) => {
+      if (existing) {
+        setEmail(existing);
+        setExistingEmail(existing);
+      }
+    });
   }
 
   // --- Helpers ---
@@ -133,8 +143,8 @@ export function Onboarding() {
         await saveUserTickers(userId, tickers);
       }
 
-      // Save email subscription if valid email was entered
-      if (email && isValidEmail(email)) {
+      // Save email subscription if valid email was entered (skip if unchanged from landing page)
+      if (email && isValidEmail(email) && email.toLowerCase().trim() !== existingEmail) {
         const subscriber = await saveDigestSubscription(userId, email, frequency);
         if (subscriber?.id) {
           triggerWelcomeEmail(subscriber.id);
@@ -477,34 +487,47 @@ export function Onboarding() {
         >
           Email digest
         </h3>
-        <div className="mb-4">
-          <div className="relative">
-            <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/40" />
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com (optional)"
-              className="w-full pl-12 pr-4 py-3 rounded-lg bg-white/5 border border-white/20 text-white placeholder-white/30 focus:outline-none focus:border-[var(--layer1-blue)] transition-colors"
-            />
-          </div>
-        </div>
 
-        <div className="flex gap-3">
-          {(["daily", "weekly"] as const).map((f) => (
-            <button
-              key={f}
-              onClick={() => setFrequency(f)}
-              className={`px-6 py-2.5 rounded-lg border transition-all capitalize ${
-                frequency === f
-                  ? "border-[var(--layer1-blue)] bg-[var(--layer1-blue)]/10 text-white"
-                  : "border-white/20 text-white/60 hover:border-white/40"
-              }`}
-            >
-              {f}
-            </button>
+        {existingEmail ? (
+          <div className="flex items-center gap-3 px-4 py-3 rounded-lg bg-green-500/10 border border-green-500/30">
+            <Check className="w-5 h-5 text-green-500 flex-shrink-0" />
+            <div>
+              <div className="text-sm text-white">Subscribed as <span className="font-medium">{existingEmail}</span></div>
+              <div className="text-xs text-white/40 mt-0.5">You'll receive your first digest tomorrow morning</div>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="mb-4">
+              <div className="relative">
+                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/40" />
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@example.com (optional)"
+                  className="w-full pl-12 pr-4 py-3 rounded-lg bg-white/5 border border-white/20 text-white placeholder-white/30 focus:outline-none focus:border-[var(--layer1-blue)] transition-colors"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              {(["daily", "weekly"] as const).map((f) => (
+                <button
+                  key={f}
+                  onClick={() => setFrequency(f)}
+                  className={`px-6 py-2.5 rounded-lg border transition-all capitalize ${
+                    frequency === f
+                      ? "border-[var(--layer1-blue)] bg-[var(--layer1-blue)]/10 text-white"
+                      : "border-white/20 text-white/60 hover:border-white/40"
+                  }`}
+                >
+                  {f}
+                </button>
           ))}
-        </div>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Footer */}
