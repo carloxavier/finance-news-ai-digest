@@ -246,7 +246,29 @@ export async function saveUserTickers(userId: string, tickers: string[]): Promis
   console.log('Saved tickers for user:', userId, 'tickers:', tickers);
 }
 
+export class EmailAlreadyRegisteredError extends Error {
+  constructor() {
+    super('This email is already registered.');
+    this.name = 'EmailAlreadyRegisteredError';
+  }
+}
+
 export async function saveDigestSubscription(userId: string, email: string, frequency: 'daily' | 'weekly'): Promise<{ id: string } | null> {
+  const normalizedEmail = email.toLowerCase().trim();
+
+  // Check if this email is already registered under a different user
+  const checkResponse = await fetch(
+    `${SUPABASE_URL}/rest/v1/digest_subscribers?email=eq.${encodeURIComponent(normalizedEmail)}&is_active=eq.true&select=user_id&limit=1`,
+    { headers }
+  );
+
+  if (checkResponse.ok) {
+    const existing = await checkResponse.json();
+    if (existing.length > 0 && existing[0].user_id !== userId) {
+      throw new EmailAlreadyRegisteredError();
+    }
+  }
+
   const response = await fetch(`${SUPABASE_URL}/rest/v1/digest_subscribers?on_conflict=email&select=id`, {
     method: 'POST',
     headers: {
@@ -255,7 +277,7 @@ export async function saveDigestSubscription(userId: string, email: string, freq
     },
     body: JSON.stringify({
       user_id: userId,
-      email: email.toLowerCase().trim(),
+      email: normalizedEmail,
       frequency,
       is_active: true,
     }),

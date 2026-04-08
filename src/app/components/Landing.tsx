@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router";
 import { getUserId } from "../utils/userId";
-import { saveDigestSubscription } from "../utils/supabase";
+import { saveDigestSubscription, EmailAlreadyRegisteredError } from "../utils/supabase";
 import "../../styles/landing.css";
 
 export function Landing() {
@@ -54,7 +54,11 @@ export function Landing() {
       await saveDigestSubscription(userId, email, "daily");
       setSubmitted(true);
     } catch (err) {
-      setError("Something went wrong. Please try again.");
+      if (err instanceof EmailAlreadyRegisteredError) {
+        setError("This email is already registered. Try a different one or check your inbox for your existing digest.");
+      } else {
+        setError("Something went wrong. Please try again.");
+      }
       console.error(err);
     } finally {
       setSubmitting(false);

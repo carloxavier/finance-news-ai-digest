@@ -9,6 +9,7 @@ import {
   getSubscriberFeed,
   triggerWelcomeEmail,
   getUserDigestEmail,
+  EmailAlreadyRegisteredError,
   type Topic,
 } from "../utils/supabase";
 import { getUserId, hasCompletedOnboarding, setOnboardingComplete, setFeedToken } from "../utils/userId";
@@ -43,6 +44,7 @@ export function Onboarding() {
   // Shared state
   const [step, setStep] = useState<Step>(1);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
 
   // Step 1 — Investing style
   const [investingStyle, setInvestingStyle] = useState<string | null>(null);
@@ -123,6 +125,7 @@ export function Onboarding() {
 
   const handleSaveAndContinue = async () => {
     setSaving(true);
+    setSaveError("");
     try {
       const userId = getUserId();
 
@@ -154,6 +157,11 @@ export function Onboarding() {
       setOnboardingComplete();
       navigate("/feed");
     } catch (error) {
+      if (error instanceof EmailAlreadyRegisteredError) {
+        setSaveError("This email is already registered. Try a different one or leave it blank to continue without a digest.");
+      } else {
+        setSaveError("Something went wrong. Please try again.");
+      }
       console.error("Failed to save:", error);
       setSaving(false);
     }
@@ -529,6 +537,13 @@ export function Onboarding() {
           </>
         )}
       </div>
+
+      {/* Error */}
+      {saveError && (
+        <div className="mb-6 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">
+          {saveError}
+        </div>
+      )}
 
       {/* Footer */}
       <div className="flex justify-between items-center pt-6 border-t border-white/10">
