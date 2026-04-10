@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router";
 import { getUserId } from "../utils/userId";
-import { saveDigestSubscription, EmailAlreadyRegisteredError } from "../utils/supabase";
+import { saveDigestSubscription, EmailAlreadyRegisteredError, triggerWelcomeEmail } from "../utils/supabase";
 import "../../styles/landing.css";
 
 export function Landing() {
@@ -51,7 +51,10 @@ export function Landing() {
     setError("");
     try {
       const userId = getUserId();
-      await saveDigestSubscription(userId, email, "daily");
+      const subscriber = await saveDigestSubscription(userId, email, "daily");
+      if (subscriber?.id) {
+        triggerWelcomeEmail(subscriber.id);
+      }
       setSubmitted(true);
     } catch (err) {
       if (err instanceof EmailAlreadyRegisteredError) {
