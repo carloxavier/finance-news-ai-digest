@@ -9,7 +9,7 @@ const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY")!;
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-const SITE_BASE_URL = "https://carloxavier.github.io/finance-news-ai-digest";
+const SITE_BASE_URL = "https://finnopolis.com";
 const TRACK_CLICK_URL = `${SUPABASE_URL}/functions/v1/track-click`;
 const FROM_EMAIL = "Finance AI Digest <digest@finnopolis.com>";
 const REPLY_TO = "carlo@finnopolis.com";
