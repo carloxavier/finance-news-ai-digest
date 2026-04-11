@@ -6,7 +6,7 @@
   <script>
     // Single page app redirect for GitHub Pages
     // https://github.com/rafgraph/spa-github-pages
-    var pathSegmentsToKeep = 1; // keep '/finance-news-ai-digest'
+    var pathSegmentsToKeep = 0; // app is served at the root of the custom domain
     var l = window.location;
     l.replace(
       l.protocol + '//' + l.hostname + (l.port ? ':' + l.port : '') +

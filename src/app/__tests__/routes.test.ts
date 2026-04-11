@@ -52,7 +52,7 @@ describe('route configuration', () => {
     }
   });
 
-  it('uses the correct basename for GitHub Pages', () => {
-    expect(router.basename).toBe('/finance-news-ai-digest/');
+  it('uses the correct basename for the custom domain', () => {
+    expect(router.basename).toBe('/');
   });
 });
