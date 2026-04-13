@@ -12,6 +12,7 @@ import {
   DialogFooter,
 } from "./ui/dialog";
 import { getUserId, setFeedToken, setOnboardingComplete } from "../utils/userId";
+import { splitBriefIntoPoints } from "../utils/splitBrief";
 
 export function ArticleDetail() {
   const { id } = useParams<{ id: string }>();
@@ -69,12 +70,6 @@ export function ArticleDetail() {
       </div>
     );
   }
-
-  // Split brief into sentences for bullet-point rendering
-  const splitBriefIntoPoints = (text: string): string[] => {
-    const sentences = text.match(/[^.!?]+(?:[.!?]+(?:\s*\[\d+\])*)+/g) || [text];
-    return sentences.map(s => s.trim()).filter(s => s.length > 0);
-  };
 
   // Parse brief text to handle citation markers
   const renderBrief = (text: string) => {
