@@ -23,7 +23,6 @@ export interface Article {
   ai_preview: string;
   consensus_signal: 'BUY' | 'SELL' | 'MIXED' | 'NO_RATING';
   extracted_tickers: string[];
-  source_url: string;
 }
 
 export interface Citation {
@@ -127,7 +126,7 @@ export async function getUserFeed(userId: string, limit: number = 20): Promise<A
         if (ids.length > 0) {
           // Fetch full article objects by ID
           const articleResponse = await fetch(
-            `${SUPABASE_URL}/rest/v1/ai_articles?select=id,headline,publication,published_at,ai_preview,consensus_signal,extracted_tickers,source_url&id=in.(${ids.map(encodeURIComponent).join(',')})&order=published_at.desc`,
+            `${SUPABASE_URL}/rest/v1/ai_articles?select=id,headline,publication,published_at,ai_preview,consensus_signal,extracted_tickers&id=in.(${ids.map(encodeURIComponent).join(',')})&order=published_at.desc`,
             { headers }
           );
 
@@ -161,7 +160,7 @@ export async function getUserFeed(userId: string, limit: number = 20): Promise<A
     // No interests set — show latest articles instead of empty feed.
     // This covers email-link users who skipped onboarding.
     const fallbackResponse = await fetch(
-      `${SUPABASE_URL}/rest/v1/ai_articles?select=id,headline,publication,published_at,ai_preview,consensus_signal,extracted_tickers,source_url&limit=${limit}&order=published_at.desc`,
+      `${SUPABASE_URL}/rest/v1/ai_articles?select=id,headline,publication,published_at,ai_preview,consensus_signal,extracted_tickers&limit=${limit}&order=published_at.desc`,
       { headers }
     );
     if (!fallbackResponse.ok) return [];
@@ -195,7 +194,7 @@ export async function getUserFeed(userId: string, limit: number = 20): Promise<A
 
   // If that also fails, try direct article query
   const directArticlesResponse = await fetch(
-    `${SUPABASE_URL}/rest/v1/ai_articles?select=id,headline,publication,published_at,ai_preview,consensus_signal,extracted_tickers,source_url&limit=${limit}&order=published_at.desc`,
+    `${SUPABASE_URL}/rest/v1/ai_articles?select=id,headline,publication,published_at,ai_preview,consensus_signal,extracted_tickers&limit=${limit}&order=published_at.desc`,
     { headers }
   );
 
@@ -450,7 +449,6 @@ function normalizeArticle(raw: Record<string, unknown>): Article {
     ai_preview: pick(flat, 'ai_preview', 'aiPreview', 'summary', 'preview', 'description', 'ai_summary'),
     consensus_signal: (pick(flat, 'consensus_signal', 'signal', 'rating') || 'NO_RATING') as Article['consensus_signal'],
     extracted_tickers: pickArray(flat, 'extracted_tickers', 'tickers', 'ticker_list', 'symbols'),
-    source_url: pick(flat, 'source_url', 'sourceUrl', 'url', 'link', 'original_url'),
   };
 
   // Log if normalization produced an empty headline — helps debug unknown shapes
