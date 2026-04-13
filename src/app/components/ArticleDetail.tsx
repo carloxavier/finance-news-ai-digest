@@ -70,6 +70,12 @@ export function ArticleDetail() {
     );
   }
 
+  // Split brief into sentences for bullet-point rendering
+  const splitBriefIntoPoints = (text: string): string[] => {
+    const sentences = text.match(/[^.!?]+(?:[.!?]+(?:\s*\[\d+\])*)+/g) || [text];
+    return sentences.map(s => s.trim()).filter(s => s.length > 0);
+  };
+
   // Parse brief text to handle citation markers
   const renderBrief = (text: string) => {
     const parts = text.split(/(\[\d+\])/g);
@@ -152,16 +158,16 @@ export function ArticleDetail() {
             ))}
           </div>
 
-          {/* Source link */}
-          <a
-            href={article.source_url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 text-sm text-[var(--citation-blue)] hover:underline"
-          >
-            Read original article
-            <ExternalLink className="w-3 h-3" />
-          </a>
+          {/* Sources summary */}
+          {article.citations && article.citations.length > 0 && (
+            <a
+              href="#sources"
+              className="inline-flex items-center gap-2 text-sm text-[var(--citation-blue)] hover:underline"
+            >
+              Synthesized from {article.citations.length} source{article.citations.length !== 1 ? 's' : ''}
+              <ArrowLeft className="w-3 h-3 rotate-[-90deg]" />
+            </a>
+          )}
         </div>
 
         {/* Brief with citations */}
@@ -169,15 +175,20 @@ export function ArticleDetail() {
           <h2 className="text-sm uppercase tracking-wider text-white/50 mb-4" style={{ fontFamily: 'var(--font-mono)' }}>
             AI Brief
           </h2>
-          <div className="prose prose-invert max-w-none">
-            <p className="text-white/90 leading-relaxed whitespace-pre-line">
-              {renderBrief(article.brief)}
-            </p>
-          </div>
+          <ul className="space-y-3">
+            {splitBriefIntoPoints(article.brief).map((point, index) => (
+              <li key={index} className="flex gap-3">
+                <span className="text-[var(--citation-blue)] flex-shrink-0 mt-1">•</span>
+                <span className="text-white/90 leading-relaxed">
+                  {renderBrief(point)}
+                </span>
+              </li>
+            ))}
+          </ul>
 
           {/* Citations */}
           {article.citations && article.citations.length > 0 && (
-            <div className="mt-8 pt-6 border-t border-white/10">
+            <div className="mt-8 pt-6 border-t border-white/10" id="sources">
               <h3 className="text-sm uppercase tracking-wider text-white/50 mb-4" style={{ fontFamily: 'var(--font-mono)' }}>
                 Sources
               </h3>
