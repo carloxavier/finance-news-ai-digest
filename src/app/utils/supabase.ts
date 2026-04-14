@@ -208,6 +208,60 @@ export async function getUserFeed(userId: string, limit: number = 20): Promise<A
     : allArticles;
 }
 
+// Fetch articles for a single topic by slug. Used by the topic tabs in the feed.
+export async function getArticlesByTopicSlug(slug: string, limit: number = 20): Promise<Article[]> {
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+
+  // 1. Resolve slug → topic_id
+  const topicRes = await fetch(
+    `${SUPABASE_URL}/rest/v1/topics?slug=eq.${encodeURIComponent(slug)}&select=id&limit=1`,
+    { headers }
+  );
+  if (!topicRes.ok) return [];
+  const topicRows = await topicRes.json();
+  if (!Array.isArray(topicRows) || topicRows.length === 0) {
+    console.warn(`[getArticlesByTopicSlug] No topic found for slug: ${slug}`);
+    return [];
+  }
+  const topicId = topicRows[0].id;
+
+  // 2. Preferred path: existing get_articles_by_topics RPC
+  try {
+    const rpcRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_articles_by_topics`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ topic_ids: [topicId], max_results: limit }),
+    });
+    if (rpcRes.ok) {
+      const data = await rpcRes.json();
+      if (Array.isArray(data) && data.length > 0) {
+        return data
+          .map((a: Record<string, unknown>) => normalizeArticle(a))
+          .filter((a) => a.id && (!a.published_at || a.published_at >= thirtyDaysAgo));
+      }
+    }
+  } catch (err) {
+    console.warn('[getArticlesByTopicSlug] RPC failed, falling back to join query:', err);
+  }
+
+  // 3. Fallback: direct join via article_topics
+  const joinRes = await fetch(
+    `${SUPABASE_URL}/rest/v1/article_topics?topic_id=eq.${topicId}&select=ai_articles!inner(id,headline,publication,published_at,ai_preview,consensus_signal,extracted_tickers)&limit=${limit * 2}`,
+    { headers }
+  );
+  if (!joinRes.ok) return [];
+  const joinRows = await joinRes.json();
+  if (!Array.isArray(joinRows)) return [];
+
+  return joinRows
+    .map((row: { ai_articles: Record<string, unknown> | null }) => row.ai_articles)
+    .filter((a): a is Record<string, unknown> => a !== null)
+    .map((a) => normalizeArticle(a))
+    .filter((a) => a.id && (!a.published_at || a.published_at >= thirtyDaysAgo))
+    .sort((a, b) => (b.published_at || '').localeCompare(a.published_at || ''))
+    .slice(0, limit);
+}
+
 export async function saveUserTickers(userId: string, tickers: string[]): Promise<void> {
   // First delete existing tickers
   const deleteResponse = await fetch(`${SUPABASE_URL}/rest/v1/user_tickers?user_id=eq.${userId}`, {

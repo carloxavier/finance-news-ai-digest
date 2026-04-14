@@ -1,6 +1,13 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
-import { getUserFeed, getSubscriberFeed, formatArticleDate, getUserDigestEmail, type Article } from "../utils/supabase";
+import {
+  getUserFeed,
+  getSubscriberFeed,
+  getArticlesByTopicSlug,
+  formatArticleDate,
+  getUserDigestEmail,
+  type Article,
+} from "../utils/supabase";
 import { getUserId, hasCompletedOnboarding, resetOnboarding, getFeedToken, clearFeedToken } from "../utils/userId";
 import { TrendingUp, TrendingDown, Minus, AlertCircle, AlertTriangle } from "lucide-react";
 import { AppShell } from "./AppShell";
@@ -15,14 +22,15 @@ export function Feed() {
   const navigate = useNavigate();
   const [articles, setArticles] = useState<Article[]>([]);
   const [loading, setLoading] = useState(true);
+  const [firstLoadDone, setFirstLoadDone] = useState(false);
   const [dataIssue, setDataIssue] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [email, setEmail] = useState("");
   const [activeTopic, setActiveTopic] = useState<string | null>(null);
   const [showWelcome, setShowWelcome] = useState(false);
 
+  // Mount-only: guards, email, and the welcome-card decision
   useEffect(() => {
-    // Check if onboarding is complete
     if (!hasCompletedOnboarding()) {
       navigate("/");
       return;
@@ -31,54 +39,82 @@ export function Feed() {
     // Fetch subscriber email for avatar display
     getUserDigestEmail(getUserId()).then((e) => setEmail(e || ""));
 
-    // Check if user has any interests — if not, show inline welcome card
-    fetch(
-      `${SUPABASE_URL}/rest/v1/user_interests?user_id=eq.${getUserId()}&select=id&limit=1`,
-      { headers: { apikey: SUPABASE_ANON_KEY } }
-    )
-      .then((r) => r.json())
-      .then((data) => {
-        if (Array.isArray(data) && data.length === 0) setShowWelcome(true);
-      })
-      .catch(() => {});
+    // Only prompt for topics on fresh signups. If a feed_token is present the
+    // visitor arrived via an email link — they're an established subscriber,
+    // and their localStorage user_id may not match the subscriber's original
+    // user_id (cross-device), so the interests query would be misleading.
+    const feedToken = getFeedToken();
+    if (!feedToken) {
+      fetch(
+        `${SUPABASE_URL}/rest/v1/user_interests?user_id=eq.${getUserId()}&select=id&limit=1`,
+        { headers: { apikey: SUPABASE_ANON_KEY } }
+      )
+        .then((r) => r.json())
+        .then((data) => {
+          if (Array.isArray(data) && data.length === 0) setShowWelcome(true);
+        })
+        .catch(() => {});
+    }
+  }, [navigate]);
 
-    // Load feed — prefer feed token (from email links) over user ID
-    // Detect articles that came back from the API but have no displayable content
-    const handleArticles = (articles: Article[]) => {
-      setArticles(articles);
-      if (articles.length > 0 && articles.every(a => !a.headline && !a.ai_preview)) {
-        console.error('[Feed] Data shape issue: received', articles.length, 'articles but none have headline or ai_preview. First article:', JSON.stringify(articles[0]));
+  // Reacts to tab changes: re-fetch articles whenever the active topic changes.
+  useEffect(() => {
+    if (!hasCompletedOnboarding()) return;
+
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+
+    const handleArticles = (fetched: Article[]) => {
+      if (cancelled) return;
+      setArticles(fetched);
+      if (fetched.length > 0 && fetched.every((a) => !a.headline && !a.ai_preview)) {
+        console.error(
+          "[Feed] Data shape issue: received",
+          fetched.length,
+          "articles but none have headline or ai_preview. First article:",
+          JSON.stringify(fetched[0])
+        );
         setDataIssue(true);
       }
     };
 
-    const feedToken = getFeedToken();
-    if (feedToken) {
-      getSubscriberFeed(feedToken)
-        .then((feed) => {
-          if (feed) {
-            handleArticles(feed.articles);
+    const load = async () => {
+      try {
+        let fetched: Article[];
+        if (activeTopic !== null) {
+          fetched = await getArticlesByTopicSlug(activeTopic);
+        } else {
+          const feedToken = getFeedToken();
+          if (feedToken) {
+            const feed = await getSubscriberFeed(feedToken);
+            if (feed) {
+              fetched = feed.articles;
+            } else {
+              clearFeedToken();
+              fetched = await getUserFeed(getUserId());
+            }
           } else {
-            // Token invalid — clear it and fall back to user ID feed
-            clearFeedToken();
-            return getUserFeed(getUserId()).then(handleArticles);
+            fetched = await getUserFeed(getUserId());
           }
-        })
-        .catch((err) => {
-          console.error("Feed error:", err);
-          setError(err.message || "Failed to load feed");
-        })
-        .finally(() => setLoading(false));
-    } else {
-      getUserFeed(getUserId())
-        .then(handleArticles)
-        .catch((err) => {
-          console.error("Feed error:", err);
-          setError(err.message || "Failed to load feed");
-        })
-        .finally(() => setLoading(false));
-    }
-  }, [navigate]);
+        }
+        handleArticles(fetched);
+      } catch (err) {
+        if (cancelled) return;
+        console.error("Feed error:", err);
+        setError(err instanceof Error ? err.message : "Failed to load feed");
+      } finally {
+        if (cancelled) return;
+        setLoading(false);
+        setFirstLoadDone(true);
+      }
+    };
+
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTopic]);
 
   const handleResetPreferences = () => {
     if (confirm("Reset your preferences and start over?")) {
@@ -113,7 +149,10 @@ export function Feed() {
     }
   };
 
-  if (loading) {
+  // Only show the full-screen spinner on the very first load. Subsequent
+  // tab switches render an inline loader inside the shell so the nav/tabs
+  // stay visible.
+  if (loading && !firstLoadDone) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-white/60">Loading your feed...</div>
@@ -185,7 +224,9 @@ export function Feed() {
       )}
       <TopicTabs activeTopic={activeTopic} onTopicChange={setActiveTopic} />
 
-      {articles.length === 0 ? (
+      {loading ? (
+        <div className="text-center py-12 text-white/40 text-sm">Loading…</div>
+      ) : articles.length === 0 ? (
         <div className="text-center py-12 text-white/50">
           No briefs found. Try adjusting your preferences.
         </div>
