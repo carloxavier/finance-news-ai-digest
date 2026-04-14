@@ -4,9 +4,11 @@ import {
   getUserFeed,
   getSubscriberFeed,
   getArticlesByTopicSlug,
+  getActiveTopics,
   formatArticleDate,
   getUserDigestEmail,
   type Article,
+  type Topic,
 } from "../utils/supabase";
 import { getUserId, hasCompletedOnboarding, resetOnboarding, getFeedToken, clearFeedToken } from "../utils/userId";
 import { TrendingUp, TrendingDown, Minus, AlertCircle, AlertTriangle } from "lucide-react";
@@ -27,6 +29,7 @@ export function Feed() {
   const [error, setError] = useState<string | null>(null);
   const [email, setEmail] = useState("");
   const [activeTopic, setActiveTopic] = useState<string | null>(null);
+  const [topics, setTopics] = useState<Topic[]>([]);
   const [showWelcome, setShowWelcome] = useState(false);
 
   // Mount-only: guards, email, and the welcome-card decision
@@ -38,6 +41,12 @@ export function Feed() {
 
     // Fetch subscriber email for avatar display
     getUserDigestEmail(getUserId()).then((e) => setEmail(e || ""));
+
+    // Populate topic tabs from the DB so every tab is a real topic with
+    // at least one article in the last 30 days.
+    getActiveTopics()
+      .then(setTopics)
+      .catch((err) => console.warn("Failed to load active topics:", err));
 
     // Only prompt for topics on fresh signups. If a feed_token is present the
     // visitor arrived via an email link — they're an established subscriber,
@@ -222,7 +231,7 @@ export function Feed() {
           }}
         />
       )}
-      <TopicTabs activeTopic={activeTopic} onTopicChange={setActiveTopic} />
+      <TopicTabs topics={topics} activeTopic={activeTopic} onTopicChange={setActiveTopic} />
 
       {loading ? (
         <div className="text-center py-12 text-white/40 text-sm">Loading…</div>

@@ -208,6 +208,42 @@ export async function getUserFeed(userId: string, limit: number = 20): Promise<A
     : allArticles;
 }
 
+// Fetch topics that have at least one article in the last `sinceDays` days.
+// Used to populate the feed's topic tabs so every tab is guaranteed to resolve
+// to a real topic row AND to have recent content. Sorted by recent-article
+// count (most active first), capped at `limit`, excluding geography.
+export async function getActiveTopics(
+  sinceDays: number = 30,
+  limit: number = 12,
+): Promise<Topic[]> {
+  const since = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000).toISOString();
+
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/article_topics?select=topic_id,topics!inner(id,slug,display_name,dimension),ai_articles!inner(published_at)&ai_articles.published_at=gte.${since}&limit=1000`,
+    { headers },
+  );
+  if (!res.ok) {
+    console.warn('[getActiveTopics] query failed:', res.status);
+    return [];
+  }
+  const rows = await res.json();
+  if (!Array.isArray(rows)) return [];
+
+  const counts = new Map<string, number>();
+  const topicById = new Map<string, Topic>();
+  for (const row of rows) {
+    const t = (row as { topics?: Topic }).topics;
+    if (!t || t.dimension === 'geography') continue;
+    counts.set(t.id, (counts.get(t.id) || 0) + 1);
+    if (!topicById.has(t.id)) topicById.set(t.id, t);
+  }
+
+  return Array.from(counts.entries())
+    .sort((a, b) => b[1] - a[1] || topicById.get(a[0])!.display_name.localeCompare(topicById.get(b[0])!.display_name))
+    .slice(0, limit)
+    .map(([id]) => topicById.get(id)!);
+}
+
 // Fetch articles for a single topic by slug. Used by the topic tabs in the feed.
 export async function getArticlesByTopicSlug(slug: string, limit: number = 20): Promise<Article[]> {
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
