@@ -1,12 +1,17 @@
 import type { Topic } from "../utils/supabase";
+import { resolveVisibleGroups } from "../utils/topicGroups";
 
 interface TopicTabsProps {
-  topics: Topic[];
-  activeTopic: string | null;
-  onTopicChange: (slug: string | null) => void;
+  /** Topics currently known to have recent articles (from getActiveTopics). */
+  activeTopics: Topic[];
+  /** Active group label, or null for the "All" tab. */
+  activeGroup: string | null;
+  onGroupChange: (label: string | null) => void;
 }
 
-export function TopicTabs({ topics, activeTopic, onTopicChange }: TopicTabsProps) {
+export function TopicTabs({ activeTopics, activeGroup, onGroupChange }: TopicTabsProps) {
+  const visibleGroups = resolveVisibleGroups(activeTopics.map((t) => t.slug));
+
   const tabClass = (selected: boolean) =>
     `px-3.5 py-1.5 text-[0.8rem] font-medium whitespace-nowrap rounded-full border transition-all ${
       selected
@@ -21,18 +26,18 @@ export function TopicTabs({ topics, activeTopic, onTopicChange }: TopicTabsProps
     >
       <button
         key="all"
-        onClick={() => onTopicChange(null)}
-        className={tabClass(activeTopic === null)}
+        onClick={() => onGroupChange(null)}
+        className={tabClass(activeGroup === null)}
       >
         All
       </button>
-      {topics.map((topic) => (
+      {visibleGroups.map((group) => (
         <button
-          key={topic.id}
-          onClick={() => onTopicChange(topic.slug)}
-          className={tabClass(activeTopic === topic.slug)}
+          key={group.label}
+          onClick={() => onGroupChange(group.label)}
+          className={tabClass(activeGroup === group.label)}
         >
-          {topic.display_name}
+          {group.label}
         </button>
       ))}
     </div>

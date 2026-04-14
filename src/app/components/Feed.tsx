@@ -3,13 +3,14 @@ import { useNavigate } from "react-router";
 import {
   getUserFeed,
   getSubscriberFeed,
-  getArticlesByTopicSlug,
+  getArticlesByTopicSlugs,
   getActiveTopics,
   formatArticleDate,
   getUserDigestEmail,
   type Article,
   type Topic,
 } from "../utils/supabase";
+import { findGroupByLabel } from "../utils/topicGroups";
 import { getUserId, hasCompletedOnboarding, resetOnboarding, getFeedToken, clearFeedToken } from "../utils/userId";
 import { TrendingUp, TrendingDown, Minus, AlertCircle, AlertTriangle } from "lucide-react";
 import { AppShell } from "./AppShell";
@@ -28,7 +29,7 @@ export function Feed() {
   const [dataIssue, setDataIssue] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [email, setEmail] = useState("");
-  const [activeTopic, setActiveTopic] = useState<string | null>(null);
+  const [activeGroup, setActiveGroup] = useState<string | null>(null);
   const [topics, setTopics] = useState<Topic[]>([]);
   const [showWelcome, setShowWelcome] = useState(false);
 
@@ -91,8 +92,9 @@ export function Feed() {
     const load = async () => {
       try {
         let fetched: Article[];
-        if (activeTopic !== null) {
-          fetched = await getArticlesByTopicSlug(activeTopic);
+        if (activeGroup !== null) {
+          const group = findGroupByLabel(activeGroup);
+          fetched = group ? await getArticlesByTopicSlugs(group.slugs) : [];
         } else {
           const feedToken = getFeedToken();
           if (feedToken) {
@@ -123,7 +125,7 @@ export function Feed() {
     return () => {
       cancelled = true;
     };
-  }, [activeTopic]);
+  }, [activeGroup]);
 
   const handleResetPreferences = () => {
     if (confirm("Reset your preferences and start over?")) {
@@ -231,7 +233,11 @@ export function Feed() {
           }}
         />
       )}
-      <TopicTabs topics={topics} activeTopic={activeTopic} onTopicChange={setActiveTopic} />
+      <TopicTabs
+        activeTopics={topics}
+        activeGroup={activeGroup}
+        onGroupChange={setActiveGroup}
+      />
 
       {loading ? (
         <div className="text-center py-12 text-white/40 text-sm">Loading…</div>

@@ -244,29 +244,33 @@ export async function getActiveTopics(
     .map(([id]) => topicById.get(id)!);
 }
 
-// Fetch articles for a single topic by slug. Used by the topic tabs in the feed.
-export async function getArticlesByTopicSlug(slug: string, limit: number = 20): Promise<Article[]> {
+// Fetch articles whose topics match any of the given slugs. Used by the feed's
+// grouped topic tabs — a tab like "Tech & AI" maps to several slugs and we
+// union the results, deduped by article id.
+export async function getArticlesByTopicSlugs(slugs: string[], limit: number = 20): Promise<Article[]> {
+  if (slugs.length === 0) return [];
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
 
-  // 1. Resolve slug → topic_id
+  // 1. Resolve slugs → topic_ids in one query
+  const slugsParam = slugs.map(encodeURIComponent).join(',');
   const topicRes = await fetch(
-    `${SUPABASE_URL}/rest/v1/topics?slug=eq.${encodeURIComponent(slug)}&select=id&limit=1`,
+    `${SUPABASE_URL}/rest/v1/topics?slug=in.(${slugsParam})&select=id`,
     { headers }
   );
   if (!topicRes.ok) return [];
   const topicRows = await topicRes.json();
   if (!Array.isArray(topicRows) || topicRows.length === 0) {
-    console.warn(`[getArticlesByTopicSlug] No topic found for slug: ${slug}`);
+    console.warn(`[getArticlesByTopicSlugs] No topics found for slugs: ${slugs.join(',')}`);
     return [];
   }
-  const topicId = topicRows[0].id;
+  const topicIds = topicRows.map((r: { id: string }) => r.id);
 
-  // 2. Preferred path: existing get_articles_by_topics RPC
+  // 2. Preferred path: existing get_articles_by_topics RPC (takes an array)
   try {
     const rpcRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_articles_by_topics`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ topic_ids: [topicId], max_results: limit }),
+      body: JSON.stringify({ topic_ids: topicIds, max_results: limit }),
     });
     if (rpcRes.ok) {
       const data = await rpcRes.json();
@@ -277,25 +281,32 @@ export async function getArticlesByTopicSlug(slug: string, limit: number = 20): 
       }
     }
   } catch (err) {
-    console.warn('[getArticlesByTopicSlug] RPC failed, falling back to join query:', err);
+    console.warn('[getArticlesByTopicSlugs] RPC failed, falling back to join query:', err);
   }
 
-  // 3. Fallback: direct join via article_topics
+  // 3. Fallback: direct join via article_topics. Over-fetch then dedupe since
+  // a single article can have multiple topics in the selected set.
   const joinRes = await fetch(
-    `${SUPABASE_URL}/rest/v1/article_topics?topic_id=eq.${topicId}&select=ai_articles!inner(id,headline,publication,published_at,ai_preview,consensus_signal,extracted_tickers)&limit=${limit * 2}`,
+    `${SUPABASE_URL}/rest/v1/article_topics?topic_id=in.(${topicIds.join(',')})&select=ai_articles!inner(id,headline,publication,published_at,ai_preview,consensus_signal,extracted_tickers)&limit=${limit * 3}`,
     { headers }
   );
   if (!joinRes.ok) return [];
   const joinRows = await joinRes.json();
   if (!Array.isArray(joinRows)) return [];
 
-  return joinRows
-    .map((row: { ai_articles: Record<string, unknown> | null }) => row.ai_articles)
-    .filter((a): a is Record<string, unknown> => a !== null)
-    .map((a) => normalizeArticle(a))
-    .filter((a) => a.id && (!a.published_at || a.published_at >= thirtyDaysAgo))
-    .sort((a, b) => (b.published_at || '').localeCompare(a.published_at || ''))
-    .slice(0, limit);
+  const seen = new Set<string>();
+  const articles: Article[] = [];
+  for (const row of joinRows) {
+    const raw = (row as { ai_articles: Record<string, unknown> | null }).ai_articles;
+    if (!raw) continue;
+    const a = normalizeArticle(raw);
+    if (!a.id || seen.has(a.id)) continue;
+    if (a.published_at && a.published_at < thirtyDaysAgo) continue;
+    seen.add(a.id);
+    articles.push(a);
+  }
+  articles.sort((a, b) => (b.published_at || '').localeCompare(a.published_at || ''));
+  return articles.slice(0, limit);
 }
 
 export async function saveUserTickers(userId: string, tickers: string[]): Promise<void> {
