@@ -87,6 +87,7 @@ Deno.serve(async (req: Request) => {
         .from("article_topics")
         .select("article_id, ai_articles(id, headline, ai_preview, source_url, publication, published_at, consensus_signal)")
         .in("topic_id", topicIds)
+        .gt("ai_articles.published_at", new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString())
         .order("created_at", { ascending: false })
         .limit(30);
 
@@ -107,6 +108,7 @@ Deno.serve(async (req: Request) => {
         .from("ai_articles")
         .select("id, headline, ai_preview, source_url, publication, published_at, consensus_signal")
         .eq("processing_status", "complete")
+        .gt("published_at", new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString())
         .order("published_at", { ascending: false })
         .limit(5);
       articles = latest ?? [];
@@ -114,7 +116,7 @@ Deno.serve(async (req: Request) => {
 
     // 5. Build links with graceful fallback
     const feedUrl = sub.feed_token
-      ? `${SITE_BASE_URL}/feed?t=${sub.feed_token}`
+      ? `${SITE_BASE_URL}?t=${sub.feed_token}`
       : SITE_BASE_URL;
     const unsubUrl = `${SITE_BASE_URL}/unsubscribe?token=${sub.unsubscribe_token}`;
 
@@ -130,7 +132,7 @@ Deno.serve(async (req: Request) => {
       body: JSON.stringify({
         from: FROM_EMAIL,
         to: [sub.email],
-        subject: "Welcome to Finnopolis \u2014 Here\u2019s a preview of your digest",
+        subject: "You\u2019re in \u2014 your first brief is ready",
         html,
         reply_to: REPLY_TO,
       }),
@@ -227,9 +229,9 @@ function renderWelcomeEmail(
 
     <!-- Welcome message -->
     <div style="margin-bottom:32px;">
-      <h2 style="font-size:22px;font-weight:500;margin:0 0 12px;color:#ffffff;">Welcome aboard</h2>
+      <h2 style="font-size:22px;font-weight:500;margin:0 0 12px;color:#ffffff;">You\u2019re in</h2>
       <p style="font-size:15px;color:#9ca3af;line-height:1.6;margin:0 0 20px;">
-        Every morning, you\u2019ll receive a personalized digest of AI-curated financial news. Here\u2019s a preview of what\u2019s waiting for you.
+        Every morning, you\u2019ll receive your morning brief \u2014 AI-curated financial intelligence, in your inbox by 7:30 AM. Here\u2019s a preview of what\u2019s waiting for you.
       </p>
 
       <!-- Profile summary -->
@@ -249,7 +251,7 @@ function renderWelcomeEmail(
     ${articles.length > 0 ? `
     <div style="margin-bottom:32px;">
       <h3 style="font-size:14px;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;font-family:monospace;margin:0 0 16px;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,0.1);">
-        Your first articles
+        Your first briefs
       </h3>
       ${articleCards}
     </div>
@@ -258,18 +260,18 @@ function renderWelcomeEmail(
     <!-- CTA -->
     <div style="text-align:center;margin:32px 0;">
       <a href="${feedUrl}" style="display:inline-block;padding:12px 32px;background:#3b82f6;color:#ffffff;text-decoration:none;border-radius:8px;font-size:14px;">
-        View Your Full Feed \u2192
+        Open Finnopolis \u2192
       </a>
     </div>
 
     <!-- Footer -->
     <table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="padding:32px 24px 24px;border-top:1px solid rgba(255,255,255,0.1);">
-      <p style="font-size:13px;color:#6b7280;line-height:1.5;margin:0 0 12px;"><strong>Finnopolis</strong> \u2014 AI-curated financial news for retail investors.</p>
+      <p style="font-size:13px;color:#6b7280;line-height:1.5;margin:0 0 12px;"><strong>Finnopolis</strong> \u2014 AI-curated financial intelligence.</p>
       <p style="font-size:11px;color:#9ca3af;margin:0 0 8px;">
         <a href="${SITE_BASE_URL}/privacy" style="color:#9ca3af;">Privacy Policy</a> \u00B7
         <a href="${SITE_BASE_URL}/terms" style="color:#9ca3af;">Terms</a> \u00B7
         <a href="${unsubUrl}" style="color:#9ca3af;">Unsubscribe</a></p>
-      <p style="font-size:11px;color:#9ca3af;margin:0;">You\u2019re receiving this because you subscribed at finnopolis.com. \u00A9 2026 Finnopolis.</p>
+      <p style="font-size:11px;color:#9ca3af;margin:0;">You\u2019re receiving this because you signed up at finnopolis.com. \u00A9 2026 Finnopolis.</p>
     </td></tr></table>
 
   </div>

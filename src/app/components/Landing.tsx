@@ -1,8 +1,24 @@
 import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router";
-import { getUserId } from "../utils/userId";
+import { getUserId, setOnboardingComplete } from "../utils/userId";
 import { saveDigestSubscription, EmailAlreadyRegisteredError, triggerWelcomeEmail } from "../utils/supabase";
 import "../../styles/landing.css";
+
+const TIMEZONES = [
+  { value: "America/New_York", label: "US Eastern" },
+  { value: "America/Chicago", label: "US Central" },
+  { value: "America/Denver", label: "US Mountain" },
+  { value: "America/Los_Angeles", label: "US Pacific" },
+  { value: "America/Anchorage", label: "US Alaska" },
+  { value: "Pacific/Honolulu", label: "US Hawaii" },
+  { value: "Europe/London", label: "London (GMT)" },
+  { value: "Europe/Madrid", label: "Madrid (CET)" },
+  { value: "Europe/Berlin", label: "Berlin (CET)" },
+  { value: "Asia/Tokyo", label: "Tokyo (JST)" },
+  { value: "Asia/Singapore", label: "Singapore" },
+  { value: "Asia/Kolkata", label: "India (IST)" },
+  { value: "Australia/Sydney", label: "Sydney (AEST)" },
+];
 
 export function Landing() {
   const navigate = useNavigate();
@@ -11,6 +27,13 @@ export function Landing() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [navScrolled, setNavScrolled] = useState(false);
+
+  const detectedTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const [timezone, setTimezone] = useState(
+    TIMEZONES.find((tz) => tz.value === detectedTz)?.value || "America/Chicago"
+  );
+  const signupSource =
+    new URLSearchParams(window.location.search).get("ref") || "direct";
 
   // Nav scroll shadow
   useEffect(() => {
@@ -37,10 +60,10 @@ export function Landing() {
     return () => obs.disconnect();
   }, []);
 
-  // Auto-redirect to onboarding after successful signup
+  // Auto-redirect to the app shell after successful signup
   useEffect(() => {
     if (submitted) {
-      const t = setTimeout(() => navigate("/onboarding"), 1500);
+      const t = setTimeout(() => navigate("/feed"), 1500);
       return () => clearTimeout(t);
     }
   }, [submitted, navigate]);
@@ -51,10 +74,13 @@ export function Landing() {
     setError("");
     try {
       const userId = getUserId();
-      const subscriber = await saveDigestSubscription(userId, email, "daily");
+      const subscriber = await saveDigestSubscription(userId, email, "daily", timezone, signupSource);
       if (subscriber?.id) {
         triggerWelcomeEmail(subscriber.id);
       }
+      // Mark onboarding complete so Feed route guard passes; inline welcome card
+      // will handle topic selection for users who land on /feed without interests.
+      setOnboardingComplete();
       setSubmitted(true);
     } catch (err) {
       if (err instanceof EmailAlreadyRegisteredError) {
@@ -94,11 +120,11 @@ export function Landing() {
             Why Us
           </a>
           <a
-            href="#subscribe"
+            href="#signup"
             className="text-[0.8rem] font-semibold uppercase tracking-widest px-5 py-2 rounded-md no-underline text-white transition-all hover:-translate-y-px"
             style={{ background: "var(--layer1-blue)" }}
           >
-            Subscribe Free
+            Get In
           </a>
         </div>
       </nav>
@@ -127,22 +153,22 @@ export function Landing() {
             className="landing-hero-title text-[clamp(2.8rem,5vw,4.5rem)] leading-[1.08] tracking-tight font-normal mb-5"
             style={{ fontFamily: "var(--font-headline)" }}
           >
-            Financial news, <em className="italic" style={{ color: "var(--citation-blue)" }}>without</em> the noise
+            Financial intelligence, <em className="italic" style={{ color: "var(--citation-blue)" }}>without</em> the noise
           </h1>
 
           {/* Description */}
           <p className="landing-hero-desc text-white/40 text-lg max-w-[420px] mb-8 leading-relaxed">
-            AI reads thousands of articles daily so you don't have to. Get the stories that actually move markets — curated, cited, and in your inbox by 7 AM.
+            AI reads thousands of sources daily so you don't have to. Get the stories that actually move markets — curated, cited, and in your inbox by 7:30 AM.
           </p>
 
           {/* CTAs */}
           <div className="landing-hero-ctas flex gap-3 items-center flex-wrap">
             <a
-              href="#subscribe"
+              href="#signup"
               className="px-7 py-3.5 text-[0.85rem] font-semibold uppercase tracking-wide rounded-md text-white no-underline transition-all hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(59,130,246,0.3)]"
               style={{ background: "var(--layer1-blue)" }}
             >
-              Get the Digest
+              Get In
             </a>
             <a
               href="#how"
@@ -155,16 +181,16 @@ export function Landing() {
 
           {/* Explore feed link */}
           <Link
-            to="/onboarding"
+            to="/feed"
             className="text-sm text-white/30 hover:text-white/60 transition-colors mt-3 inline-block no-underline"
           >
-            Or explore the feed &rarr;
+            Or explore the app &rarr;
           </Link>
 
           {/* Social proof */}
           <p className="landing-hero-proof text-[0.78rem] text-white/40 mt-6">
             <span className="text-green-500 font-semibold">&#10003; Free during beta</span>
-            &nbsp;&middot;&nbsp; No spam &nbsp;&middot;&nbsp; Unsubscribe anytime
+            &nbsp;&middot;&nbsp; No spam &nbsp;&middot;&nbsp; Cancel anytime
           </p>
         </div>
 
@@ -231,10 +257,10 @@ export function Landing() {
           className="text-[clamp(2rem,4vw,3.2rem)] font-normal leading-tight tracking-tight mb-4"
           style={{ fontFamily: "var(--font-headline)" }}
         >
-          Not another newsletter
+          Not another newsletter — it's an app
         </h2>
         <p className="text-white/40 text-base max-w-[500px] leading-relaxed">
-          Most financial newsletters are one person's opinion. Finnopolis synthesizes the entire market and shows its work.
+          Most financial tools are one person's opinion. Finnopolis synthesizes the entire market and shows its work.
         </p>
 
         <div
@@ -289,7 +315,7 @@ export function Landing() {
 
       {/* ── CTA ── */}
       <section
-        id="subscribe"
+        id="signup"
         className="landing-cta relative overflow-hidden text-center py-[100px] px-[8vw]"
         style={{ background: "linear-gradient(180deg, var(--navy-bg) 0%, #0d1424 100%)" }}
       >
@@ -307,11 +333,11 @@ export function Landing() {
             Your morning briefing, <em className="italic" style={{ color: "var(--citation-blue)" }}>reimagined</em>
           </h2>
           <p className="text-white/40 text-base mb-8 max-w-[480px] mx-auto">
-            Join early access. It's free during the beta — we'll earn your subscription later.
+            Join early access. It's free during the beta — we'll earn your membership later.
           </p>
 
           {/* Signup form */}
-          <form onSubmit={handleSignup} className="landing-signup-form flex gap-3 max-w-[440px] mx-auto">
+          <form onSubmit={handleSignup} className="landing-signup-form flex gap-3 max-w-[560px] mx-auto flex-wrap justify-center">
             <input
               type="email"
               placeholder="you@example.com"
@@ -320,7 +346,7 @@ export function Landing() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               disabled={submitted}
-              className="flex-1 px-5 py-3.5 rounded-md text-[0.95rem] text-white outline-none transition-colors placeholder:text-white/20"
+              className="flex-1 min-w-[200px] px-5 py-3.5 rounded-md text-[0.95rem] text-white outline-none transition-colors placeholder:text-white/20"
               style={{
                 fontFamily: "var(--font-body)",
                 background: "#111827",
@@ -329,15 +355,37 @@ export function Landing() {
               onFocus={(e) => (e.target.style.borderColor = "var(--layer1-blue)")}
               onBlur={(e) => (e.target.style.borderColor = "rgba(255,255,255,0.1)")}
             />
+            <select
+              value={timezone}
+              onChange={(e) => setTimezone(e.target.value)}
+              disabled={submitted}
+              aria-label="Timezone"
+              className="px-3 py-3.5 rounded-md text-[0.82rem] text-white/70 outline-none"
+              style={{
+                fontFamily: "var(--font-body)",
+                background: "#111827",
+                border: "1px solid rgba(255,255,255,0.1)",
+                maxWidth: "140px",
+              }}
+            >
+              {TIMEZONES.map((tz) => (
+                <option key={tz.value} value={tz.value}>
+                  {tz.label}
+                </option>
+              ))}
+            </select>
             <button
               type="submit"
               disabled={submitting || submitted}
               className="px-7 py-3.5 text-[0.85rem] font-semibold uppercase tracking-wide rounded-md text-white border-none cursor-pointer transition-all hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(59,130,246,0.3)] whitespace-nowrap disabled:cursor-not-allowed"
               style={{ background: submitted ? "#22c55e" : "var(--layer1-blue)" }}
             >
-              {submitting ? "Subscribing..." : submitted ? "Taking you to setup..." : "Subscribe Free"}
+              {submitting ? "Getting you in..." : submitted ? "You're in! Opening Finnopolis..." : "Get In"}
             </button>
           </form>
+          <p className="text-[0.72rem] text-white/30 mt-3">
+            Your morning brief arrives at 7:30 AM in your timezone.
+          </p>
 
           {error && (
             <p className="text-red-400 text-sm mt-3">{error}</p>
@@ -347,7 +395,7 @@ export function Landing() {
           <div className="landing-guarantees flex justify-center gap-8 mt-6 flex-wrap">
             <Guarantee text="Free during beta" />
             <Guarantee text="No credit card" />
-            <Guarantee text="One-click unsubscribe" />
+            <Guarantee text="Cancel anytime" />
           </div>
         </div>
       </section>
