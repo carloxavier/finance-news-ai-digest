@@ -1,8 +1,15 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
-import { getUserFeed, getSubscriberFeed, formatArticleDate, type Article } from "../utils/supabase";
+import { getUserFeed, getSubscriberFeed, formatArticleDate, getUserDigestEmail, type Article } from "../utils/supabase";
 import { getUserId, hasCompletedOnboarding, resetOnboarding, getFeedToken, clearFeedToken } from "../utils/userId";
-import { TrendingUp, TrendingDown, Minus, AlertCircle, Settings, AlertTriangle } from "lucide-react";
+import { TrendingUp, TrendingDown, Minus, AlertCircle, AlertTriangle } from "lucide-react";
+import { AppShell } from "./AppShell";
+import { TopicTabs } from "./TopicTabs";
+import { WelcomeCard } from "./WelcomeCard";
+
+const SUPABASE_URL = "https://kamfamwjswkncftsdgxi.supabase.co";
+const SUPABASE_ANON_KEY =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImthbWZhbXdqc3drbmNmdHNkZ3hpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMxMDQ3NDgsImV4cCI6MjA4ODY4MDc0OH0.O8NasVjjajK-T18GppCjfljS_h30fNrPo3TgPJGmcEs";
 
 export function Feed() {
   const navigate = useNavigate();
@@ -10,6 +17,9 @@ export function Feed() {
   const [loading, setLoading] = useState(true);
   const [dataIssue, setDataIssue] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [email, setEmail] = useState("");
+  const [activeTopic, setActiveTopic] = useState<string | null>(null);
+  const [showWelcome, setShowWelcome] = useState(false);
 
   useEffect(() => {
     // Check if onboarding is complete
@@ -17,6 +27,20 @@ export function Feed() {
       navigate("/");
       return;
     }
+
+    // Fetch subscriber email for avatar display
+    getUserDigestEmail(getUserId()).then((e) => setEmail(e || ""));
+
+    // Check if user has any interests — if not, show inline welcome card
+    fetch(
+      `${SUPABASE_URL}/rest/v1/user_interests?user_id=eq.${getUserId()}&select=id&limit=1`,
+      { headers: { apikey: SUPABASE_ANON_KEY } }
+    )
+      .then((r) => r.json())
+      .then((data) => {
+        if (Array.isArray(data) && data.length === 0) setShowWelcome(true);
+      })
+      .catch(() => {});
 
     // Load feed — prefer feed token (from email links) over user ID
     // Detect articles that came back from the API but have no displayable content
@@ -150,32 +174,24 @@ export function Feed() {
   }
 
   return (
-    <div className="min-h-screen">
-      {/* Header */}
-      <div className="sticky top-0 z-10 bg-[var(--navy-bg)]/95 backdrop-blur border-b border-white/10">
-        <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between">
-          <h1 className="text-2xl" style={{ fontFamily: 'var(--font-headline)' }}>
-            Your Financial Digest
-          </h1>
-          <button
-            onClick={handleResetPreferences}
-            className="p-2 hover:bg-white/10 rounded-lg transition-colors"
-            title="Reset preferences"
-          >
-            <Settings className="w-5 h-5 text-white/60" />
-          </button>
-        </div>
-      </div>
+    <AppShell email={email}>
+      {showWelcome && (
+        <WelcomeCard
+          onDone={() => {
+            setShowWelcome(false);
+            window.location.reload();
+          }}
+        />
+      )}
+      <TopicTabs activeTopic={activeTopic} onTopicChange={setActiveTopic} />
 
-      {/* Feed */}
-      <div className="max-w-4xl mx-auto px-6 py-6">
-        {articles.length === 0 ? (
-          <div className="text-center py-12 text-white/50">
-            No articles found. Try adjusting your preferences.
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {articles.map((article) => (
+      {articles.length === 0 ? (
+        <div className="text-center py-12 text-white/50">
+          No briefs found. Try adjusting your preferences.
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {articles.map((article) => (
               <button
                 key={article.id}
                 onClick={() => navigate(`/article/${article.id}`)}
@@ -230,9 +246,8 @@ export function Feed() {
                 </div>
               </button>
             ))}
-          </div>
-        )}
-      </div>
-    </div>
+        </div>
+      )}
+    </AppShell>
   );
 }

@@ -11,7 +11,7 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 const SITE_BASE_URL = "https://finnopolis.com";
 const TRACK_CLICK_URL = `${SUPABASE_URL}/functions/v1/track-click`;
-const FROM_EMAIL = "Finance AI Digest <digest@finnopolis.com>";
+const FROM_EMAIL = "Finnopolis <digest@finnopolis.com>";
 const REPLY_TO = "carlo@finnopolis.com";
 
 // ─── Types ───────────────────────────────────────────────────────────
@@ -23,6 +23,7 @@ interface Subscriber {
   frequency: string;
   unsubscribe_token: string;
   feed_token: string | null;
+  timezone: string;
 }
 
 interface Article {
@@ -58,44 +59,46 @@ Deno.serve(async (req: Request) => {
 
     // Optional: force-send to a specific email (bypasses timing checks)
     let forceEmail: string | null = null;
+    let targetHour = 7;
     try {
       const body = await req.json();
       if (body?.email) forceEmail = body.email.toLowerCase().trim();
+      if (body?.target_hour !== undefined) targetHour = body.target_hour;
     } catch {
       // No body or invalid JSON — normal cron invocation
     }
 
-    // 1. Get subscribers due for a send
-    let query = supabase
-      .from("digest_subscribers")
-      .select("id, user_id, email, frequency, unsubscribe_token, feed_token")
-      .eq("is_active", true);
+    // 1. Get subscribers due for a send (timezone-aware via RPC)
+    let subscribers: Subscriber[] = [];
 
     if (forceEmail) {
-      // Force-send: target a specific subscriber, ignore timing
-      query = query.eq("email", forceEmail);
+      const { data, error: subError } = await supabase
+        .from("digest_subscribers")
+        .select("id, user_id, email, frequency, unsubscribe_token, feed_token, timezone")
+        .eq("is_active", true)
+        .eq("email", forceEmail);
+      if (subError) {
+        console.error("Error fetching subscriber:", subError);
+        return jsonResponse({ error: subError.message }, 500);
+      }
+      subscribers = (data || []) as Subscriber[];
     } else {
-      // Normal cron: only subscribers due based on frequency
-      query = query.or(
-        "last_sent_at.is.null," +
-        "and(frequency.eq.daily,last_sent_at.lt." + hoursAgo(20) + ")," +
-        "and(frequency.eq.weekly,last_sent_at.lt." + daysAgo(6) + ")"
-      );
+      const { data, error: subError } = await supabase.rpc("get_digest_recipients", {
+        target_hour: targetHour,
+      });
+      if (subError) {
+        console.error("Error fetching timezone-filtered subscribers:", subError);
+        return jsonResponse({ error: subError.message }, 500);
+      }
+      subscribers = (data || []) as Subscriber[];
     }
 
-    const { data: subscribers, error: subError } = await query;
-
-    if (subError) {
-      console.error("Error fetching subscribers:", subError);
-      return jsonResponse({ error: subError.message }, 500);
+    if (subscribers.length === 0) {
+      console.log(`No subscribers due for hour ${targetHour}`);
+      return jsonResponse({ sent: 0, skipped: 0, failed: 0, message: `No subscribers due for hour ${targetHour}` });
     }
 
-    if (!subscribers || subscribers.length === 0) {
-      console.log("No subscribers due for a send");
-      return jsonResponse({ sent: 0, skipped: 0, failed: 0, message: "No subscribers due" });
-    }
-
-    console.log(`Found ${subscribers.length} subscriber(s) due for digest`);
+    console.log(`Found ${subscribers.length} subscriber(s) due for digest (hour=${targetHour})`);
 
     let sent = 0;
     let failed = 0;
@@ -105,7 +108,7 @@ Deno.serve(async (req: Request) => {
     const batchId = `digest-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-0700`;
 
     // 2. Process each subscriber
-    for (const sub of subscribers as Subscriber[]) {
+    for (const sub of subscribers) {
       try {
         // Get their personalized feed (newest 8 articles, same source as the web feed)
         const articles = await getSubscriberArticles(supabase, sub.feed_token);
@@ -130,7 +133,7 @@ Deno.serve(async (req: Request) => {
 
         // Build and send email
         const html = renderDigestEmail(articlesWithTokens, userTickers, sub, sent + failed + 1);
-        const subject = `📊 Your Finance Digest — ${formatDate(new Date())}`;
+        const subject = `📊 Your morning brief — ${formatDate(new Date())}`;
 
         await sendEmail(sub.email, subject, html, batchId);
 
@@ -211,6 +214,7 @@ async function getSubscriberArticles(
   const { data: latestArticles, error: latestError } = await supabase
     .from("ai_articles")
     .select("id, headline, publication, published_at, ai_preview, consensus_signal, extracted_tickers, inference_watch")
+    .gt("published_at", new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString())
     .order("published_at", { ascending: false })
     .limit(8);
 
@@ -263,25 +267,28 @@ function jsonResponse(data: unknown, status = 200): Response {
   });
 }
 
-function hoursAgo(h: number): string {
-  return new Date(Date.now() - h * 60 * 60 * 1000).toISOString();
-}
-
-function daysAgo(d: number): string {
-  return new Date(Date.now() - d * 24 * 60 * 60 * 1000).toISOString();
-}
-
 function formatDate(d: Date): string {
   return d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
 }
 
-function timeAgo(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const hours = Math.floor(diff / (1000 * 60 * 60));
-  if (hours < 1) return "just now";
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
+function formatArticleTime(dateStr: string, timezone: string): string {
+  try {
+    return new Date(dateStr).toLocaleString("en-US", {
+      timeZone: timezone || "America/Chicago",
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      timeZoneName: "short",
+    });
+  } catch {
+    return new Date(dateStr).toLocaleString("en-US", {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  }
 }
 
 // ─── Email template ──────────────────────────────────────────────────
@@ -327,7 +334,7 @@ function renderDigestEmail(
       return `
         <div style="background:#152638;border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:24px;margin-bottom:16px;">
           <div style="font-size:12px;color:#6b7280;font-family:monospace;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">
-            ${article.publication} · ${timeAgo(article.published_at)}
+            ${article.publication} · ${formatArticleTime(article.published_at, subscriber.timezone)}
           </div>
           <a href="${url}" style="color:#ffffff;text-decoration:none;font-size:18px;font-weight:500;line-height:1.4;display:block;margin-bottom:10px;">
             ${escapeHtml(article.headline)}
@@ -358,7 +365,7 @@ function renderDigestEmail(
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Finance AI Digest</title>
+  <title>Finnopolis</title>
 </head>
 <body style="margin:0;padding:0;background-color:#0d1b2a;color:#ffffff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
   <div style="max-width:600px;margin:0 auto;padding:32px 16px;">
@@ -369,7 +376,7 @@ function renderDigestEmail(
         <h1 style="margin:0;font-size:28px;font-weight:400;letter-spacing:-0.5px;">Finnopolis</h1>
       </a>
       <p style="margin:8px 0 0;font-size:14px;color:#6b7280;">
-        ${formatDate(new Date())} · Your personalized briefing
+        ${formatDate(new Date())} · Your morning brief
       </p>
     </div>
 
@@ -379,18 +386,18 @@ function renderDigestEmail(
     <!-- CTA -->
     <div style="text-align:center;margin:32px 0;">
       <a href="${feedUrl}" style="display:inline-block;padding:12px 32px;background:#3b82f6;color:#ffffff;text-decoration:none;border-radius:8px;font-size:14px;">
-        View Full Feed →
+        Open in Finnopolis →
       </a>
     </div>
 
     <!-- Footer -->
     <table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="padding:32px 24px 24px;border-top:1px solid #e5e7eb;">
-      <p style="font-size:13px;color:#6b7280;line-height:1.5;margin:0 0 12px;"><strong>Finnopolis</strong> — AI-curated financial news for retail investors.</p>
+      <p style="font-size:13px;color:#6b7280;line-height:1.5;margin:0 0 12px;"><strong>Finnopolis</strong> — AI-curated financial intelligence.</p>
       <p style="font-size:11px;color:#9ca3af;margin:0 0 8px;">
         <a href="${SITE_BASE_URL}/privacy" style="color:#9ca3af;">Privacy Policy</a> ·
         <a href="${SITE_BASE_URL}/terms" style="color:#9ca3af;">Terms</a> ·
         <a href="${SITE_BASE_URL}/unsubscribe?token=${subscriber.unsubscribe_token}" style="color:#9ca3af;">Unsubscribe</a></p>
-      <p style="font-size:11px;color:#9ca3af;margin:0;">You're receiving this because you subscribed at finnopolis.com. © 2026 Finnopolis.</p>
+      <p style="font-size:11px;color:#9ca3af;margin:0;">You're receiving this because you signed up at finnopolis.com. © 2026 Finnopolis.</p>
     </td></tr></table>
 
   </div>

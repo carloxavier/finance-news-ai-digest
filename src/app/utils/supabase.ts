@@ -1,5 +1,3 @@
-import { formatDistanceToNow } from "date-fns";
-
 const SUPABASE_URL = 'https://kamfamwjswkncftsdgxi.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImthbWZhbXdqc3drbmNmdHNkZ3hpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMxMDQ3NDgsImV4cCI6MjA4ODY4MDc0OH0.O8NasVjjajK-T18GppCjfljS_h30fNrPo3TgPJGmcEs';
 
@@ -104,6 +102,7 @@ export async function saveUserInterests(userId: string, topicIds: string[]): Pro
 }
 
 export async function getUserFeed(userId: string, limit: number = 20): Promise<Article[]> {
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
   try {
     // The get_user_feed RPC returns ranked article IDs, not full article objects.
     // We need a second query to fetch the full article data.
@@ -126,7 +125,7 @@ export async function getUserFeed(userId: string, limit: number = 20): Promise<A
         if (ids.length > 0) {
           // Fetch full article objects by ID
           const articleResponse = await fetch(
-            `${SUPABASE_URL}/rest/v1/ai_articles?select=id,headline,publication,published_at,ai_preview,consensus_signal,extracted_tickers&id=in.(${ids.map(encodeURIComponent).join(',')})&order=published_at.desc`,
+            `${SUPABASE_URL}/rest/v1/ai_articles?select=id,headline,publication,published_at,ai_preview,consensus_signal,extracted_tickers&id=in.(${ids.map(encodeURIComponent).join(',')})&published_at=gte.${thirtyDaysAgo}&order=published_at.desc`,
             { headers }
           );
 
@@ -160,7 +159,7 @@ export async function getUserFeed(userId: string, limit: number = 20): Promise<A
     // No interests set — show latest articles instead of empty feed.
     // This covers email-link users who skipped onboarding.
     const fallbackResponse = await fetch(
-      `${SUPABASE_URL}/rest/v1/ai_articles?select=id,headline,publication,published_at,ai_preview,consensus_signal,extracted_tickers&limit=${limit}&order=published_at.desc`,
+      `${SUPABASE_URL}/rest/v1/ai_articles?select=id,headline,publication,published_at,ai_preview,consensus_signal,extracted_tickers&published_at=gte.${thirtyDaysAgo}&limit=${limit}&order=published_at.desc`,
       { headers }
     );
     if (!fallbackResponse.ok) return [];
@@ -194,7 +193,7 @@ export async function getUserFeed(userId: string, limit: number = 20): Promise<A
 
   // If that also fails, try direct article query
   const directArticlesResponse = await fetch(
-    `${SUPABASE_URL}/rest/v1/ai_articles?select=id,headline,publication,published_at,ai_preview,consensus_signal,extracted_tickers&limit=${limit}&order=published_at.desc`,
+    `${SUPABASE_URL}/rest/v1/ai_articles?select=id,headline,publication,published_at,ai_preview,consensus_signal,extracted_tickers&published_at=gte.${thirtyDaysAgo}&limit=${limit}&order=published_at.desc`,
     { headers }
   );
 
@@ -252,7 +251,13 @@ export class EmailAlreadyRegisteredError extends Error {
   }
 }
 
-export async function saveDigestSubscription(userId: string, email: string, frequency: 'daily' | 'weekly'): Promise<{ id: string } | null> {
+export async function saveDigestSubscription(
+  userId: string,
+  email: string,
+  frequency: 'daily' | 'weekly',
+  timezone?: string,
+  signupSource?: string,
+): Promise<{ id: string } | null> {
   const normalizedEmail = email.toLowerCase().trim();
 
   // Check if this email is already registered under a different user
@@ -290,6 +295,8 @@ export async function saveDigestSubscription(userId: string, email: string, freq
       email: normalizedEmail,
       frequency,
       is_active: true,
+      ...(timezone && { timezone }),
+      ...(signupSource && { signup_source: signupSource }),
     }),
   });
 
@@ -484,10 +491,17 @@ export async function getSubscriberFeed(token: string, limit: number = 20): Prom
 }
 
 export function formatArticleDate(dateStr: string | null | undefined): string {
-  if (!dateStr) return 'Recently';
+  if (!dateStr) return '';
   const date = new Date(dateStr);
-  if (isNaN(date.getTime())) return 'Recently';
-  return formatDistanceToNow(date, { addSuffix: true });
+  if (isNaN(date.getTime())) return '';
+  return date.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZoneName: 'short',
+  });
+  // Output example: "Apr 14, 7:30 AM ET"
 }
 
 export async function getArticleDetail(articleId: string): Promise<ArticleDetail> {
