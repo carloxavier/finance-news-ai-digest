@@ -27,15 +27,15 @@ export function Privacy() {
             <ul className="list-disc pl-5 space-y-1">
               <li>An anonymous browser identifier (random UUID, stored in your browser only)</li>
               <li>Your selected topics and stock tickers</li>
-              <li>Your email address if you subscribe to the digest</li>
+              <li>Your email address if you sign up for the digest</li>
             </ul>
           </div>
 
           <div>
             <h2 className="text-[18px] font-semibold text-white mb-3">How we use it</h2>
             <p>
-              We use your data solely to personalise your financial news feed and deliver the email digest you subscribed
-              to. We do not sell, rent, or share your data with third parties.
+              We use your data solely to personalise your financial news feed and deliver the email digest you signed up
+              for. We do not sell, rent, or share your data with third parties.
             </p>
           </div>
 

@@ -46,7 +46,7 @@ describe('route configuration', () => {
     const childPaths = rootRoute.children?.map((r) =>
       'index' in r && r.index ? '/' : r.path
     );
-    const requiredPaths = ['onboarding', 'feed', 'article/:id', 'privacy', 'terms', 'unsubscribe'];
+    const requiredPaths = ['onboarding', 'feed', 'digest', 'explore', 'article/:id', 'privacy', 'terms', 'unsubscribe'];
     for (const path of requiredPaths) {
       expect(childPaths).toContain(path);
     }
