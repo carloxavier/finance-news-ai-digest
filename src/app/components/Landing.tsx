@@ -5,10 +5,10 @@ import {
   saveDigestSubscription,
   EmailAlreadyRegisteredError,
   triggerWelcomeEmail,
-  getPublicPreview,
   formatArticleDate,
   type Article,
 } from "../utils/supabase";
+import { usePublicPreview } from "../hooks/usePublicPreview";
 import "../../styles/landing.css";
 
 const TIMEZONES = [
@@ -694,38 +694,12 @@ const PREVIEW_TABS: Array<{ label: string; slug: string | null }> = [
 
 function LivePreview() {
   const [activeLabel, setActiveLabel] = useState<string>("All");
-  const [cache, setCache] = useState<Record<string, Article[]>>({});
-  const [loadingTab, setLoadingTab] = useState<string | null>("All");
-
-  useEffect(() => {
-    if (cache[activeLabel] !== undefined) {
-      setLoadingTab(null);
-      return;
-    }
-    const tab = PREVIEW_TABS.find((t) => t.label === activeLabel);
-    if (!tab) return;
-    let cancelled = false;
-    setLoadingTab(activeLabel);
-    getPublicPreview(tab.slug)
-      .then((articles) => {
-        if (cancelled) return;
-        setCache((prev) => ({ ...prev, [activeLabel]: articles.slice(0, 5) }));
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        console.error("[LivePreview] failed to load:", err);
-        setCache((prev) => ({ ...prev, [activeLabel]: [] }));
-      })
-      .finally(() => {
-        if (!cancelled) setLoadingTab(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [activeLabel, cache]);
-
-  const articles = cache[activeLabel] ?? [];
-  const isLoading = loadingTab === activeLabel;
+  const activeTab = PREVIEW_TABS.find((t) => t.label === activeLabel);
+  const { articles, loading: isLoading } = usePublicPreview(
+    activeLabel,
+    activeTab?.slug ?? null,
+    5,
+  );
 
   return (
     <section className="landing-reveal py-[100px] px-[8vw]">

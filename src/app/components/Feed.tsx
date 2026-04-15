@@ -1,17 +1,14 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import {
-  getUserFeed,
-  getSubscriberFeed,
-  getArticlesByTopicSlugs,
   getActiveTopics,
   formatArticleDate,
   getUserDigestEmail,
   type Article,
   type Topic,
 } from "../utils/supabase";
-import { findGroupByLabel } from "../utils/topicGroups";
 import { getUserId, hasCompletedOnboarding, resetOnboarding, getFeedToken, clearFeedToken } from "../utils/userId";
+import { useUserFeed } from "../hooks/useUserFeed";
 import { TrendingUp, TrendingDown, Minus, AlertCircle, AlertTriangle } from "lucide-react";
 import { AppShell } from "./AppShell";
 import { TopicTabs } from "./TopicTabs";
@@ -23,15 +20,14 @@ const SUPABASE_ANON_KEY =
 
 export function Feed() {
   const navigate = useNavigate();
-  const [articles, setArticles] = useState<Article[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [firstLoadDone, setFirstLoadDone] = useState(false);
   const [dataIssue, setDataIssue] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [email, setEmail] = useState("");
   const [activeGroup, setActiveGroup] = useState<string | null>(null);
   const [topics, setTopics] = useState<Topic[]>([]);
   const [showWelcome, setShowWelcome] = useState(false);
+  const onboarded = hasCompletedOnboarding();
+
+  const { articles, loading, firstLoadDone, error } = useUserFeed(activeGroup, onboarded);
 
   // Mount-only: guards, email, and the welcome-card decision
   useEffect(() => {
@@ -67,65 +63,18 @@ export function Feed() {
     }
   }, [navigate]);
 
-  // Reacts to tab changes: re-fetch articles whenever the active topic changes.
+  // Detect data-shape issues: every loaded article missing headline/ai_preview.
   useEffect(() => {
-    if (!hasCompletedOnboarding()) return;
-
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-
-    const handleArticles = (fetched: Article[]) => {
-      if (cancelled) return;
-      setArticles(fetched);
-      if (fetched.length > 0 && fetched.every((a) => !a.headline && !a.ai_preview)) {
-        console.error(
-          "[Feed] Data shape issue: received",
-          fetched.length,
-          "articles but none have headline or ai_preview. First article:",
-          JSON.stringify(fetched[0])
-        );
-        setDataIssue(true);
-      }
-    };
-
-    const load = async () => {
-      try {
-        let fetched: Article[];
-        if (activeGroup !== null) {
-          const group = findGroupByLabel(activeGroup);
-          fetched = group ? await getArticlesByTopicSlugs(group.slugs) : [];
-        } else {
-          const feedToken = getFeedToken();
-          if (feedToken) {
-            const feed = await getSubscriberFeed(feedToken);
-            if (feed) {
-              fetched = feed.articles;
-            } else {
-              clearFeedToken();
-              fetched = await getUserFeed(getUserId());
-            }
-          } else {
-            fetched = await getUserFeed(getUserId());
-          }
-        }
-        handleArticles(fetched);
-      } catch (err) {
-        if (cancelled) return;
-        console.error("Feed error:", err);
-        setError(err instanceof Error ? err.message : "Failed to load feed");
-      } finally {
-        if (cancelled) return;
-        setLoading(false);
-        setFirstLoadDone(true);
-      }
-    };
-
-    load();
-    return () => {
-      cancelled = true;
-    };
-  }, [activeGroup]);
+    if (articles.length > 0 && articles.every((a) => !a.headline && !a.ai_preview)) {
+      console.error(
+        "[Feed] Data shape issue: received",
+        articles.length,
+        "articles but none have headline or ai_preview. First article:",
+        JSON.stringify(articles[0])
+      );
+      setDataIssue(true);
+    }
+  }, [articles]);
 
   const handleResetPreferences = () => {
     if (confirm("Reset your preferences and start over?")) {

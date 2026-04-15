@@ -1,37 +1,13 @@
-import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
-import {
-  getGeneralFeed,
-  formatArticleDate,
-  type Article,
-} from "../utils/supabase";
+import { formatArticleDate, type Article } from "../utils/supabase";
+import { useGeneralFeed } from "../hooks/useGeneralFeed";
 import { TrendingUp, TrendingDown, Minus, AlertCircle } from "lucide-react";
 
 const SKELETON_COUNT = 5;
 
 export function ExploreFeed() {
   const navigate = useNavigate();
-  const [articles, setArticles] = useState<Article[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    getGeneralFeed(20)
-      .then((fetched) => {
-        if (cancelled) return;
-        setArticles(fetched);
-      })
-      .catch((err) => {
-        console.error("[ExploreFeed] failed to load feed:", err);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const { articles, loading } = useGeneralFeed(20);
 
   const getSignalIcon = (signal: Article["consensus_signal"]) => {
     switch (signal) {
