@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router";
-import { getArticleDetail, checkWaitlistStatus, joinAiAgentWaitlist, getUserDigestEmail, formatArticleDate, type ArticleDetail as ArticleDetailType } from "../utils/supabase";
+import { checkWaitlistStatus, joinAiAgentWaitlist, getUserDigestEmail, formatArticleDate } from "../utils/supabase";
+import { useArticleDetail } from "../hooks/useArticleDetail";
 import { ArrowLeft, ExternalLink, AlertTriangle, Sparkles } from "lucide-react";
 import { AnalystDataSection } from "./AnalystDataSection";
 import {
@@ -18,8 +19,7 @@ export function ArticleDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const [article, setArticle] = useState<ArticleDetailType | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { article, loading } = useArticleDetail(id);
   const [showAiModal, setShowAiModal] = useState(false);
   const [emailInput, setEmailInput] = useState("");
   const [digestEmail, setDigestEmail] = useState<string | null>(null);
@@ -36,15 +36,6 @@ export function ArticleDetail() {
       setOnboardingComplete();
     }
   }, [searchParams]);
-
-  useEffect(() => {
-    if (!id) return;
-
-    getArticleDetail(id)
-      .then(setArticle)
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, [id]);
 
   useEffect(() => {
     const userId = getUserId();

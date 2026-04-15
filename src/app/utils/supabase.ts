@@ -605,6 +605,50 @@ export function formatArticleDate(dateStr: string | null | undefined): string {
   // Output example: "Apr 14, 7:30 AM ET"
 }
 
+// Public, unauthenticated feed used by /explore. Calls the get_general_feed RPC
+// which returns a flat array of articles.
+export async function getGeneralFeed(limit: number = 20): Promise<Article[]> {
+  try {
+    const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_general_feed`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ p_limit: limit }),
+    });
+    if (!response.ok) {
+      console.warn('[getGeneralFeed] RPC failed with status', response.status);
+      return [];
+    }
+    const data = await response.json();
+    if (!Array.isArray(data)) return [];
+    return data.map((a: Record<string, unknown>) => normalizeArticle(a));
+  } catch (err) {
+    console.warn('[getGeneralFeed] fetch error:', err);
+    return [];
+  }
+}
+
+// Public, unauthenticated topic preview used by the Landing page. Calls the
+// get_public_preview RPC. Pass a topic slug or null for "all topics".
+export async function getPublicPreview(slug: string | null): Promise<Article[]> {
+  try {
+    const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_public_preview`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ p_topic_slug: slug }),
+    });
+    if (!response.ok) {
+      console.warn('[getPublicPreview] RPC failed with status', response.status);
+      return [];
+    }
+    const data = await response.json();
+    if (!Array.isArray(data)) return [];
+    return data.map((a: Record<string, unknown>) => normalizeArticle(a));
+  } catch (err) {
+    console.warn('[getPublicPreview] fetch error:', err);
+    return [];
+  }
+}
+
 export async function getArticleDetail(articleId: string): Promise<ArticleDetail> {
   const response = await fetch(
     `${SUPABASE_URL}/rest/v1/ai_articles?id=eq.${articleId}&select=*`,

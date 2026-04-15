@@ -1,7 +1,14 @@
 import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router";
 import { getUserId, setOnboardingComplete } from "../utils/userId";
-import { saveDigestSubscription, EmailAlreadyRegisteredError, triggerWelcomeEmail } from "../utils/supabase";
+import {
+  saveDigestSubscription,
+  EmailAlreadyRegisteredError,
+  triggerWelcomeEmail,
+  formatArticleDate,
+  type Article,
+} from "../utils/supabase";
+import { usePublicPreview } from "../hooks/usePublicPreview";
 import "../../styles/landing.css";
 
 const TIMEZONES = [
@@ -158,7 +165,7 @@ export function Landing() {
 
           {/* Description */}
           <p className="landing-hero-desc text-white/40 text-lg max-w-[420px] mb-8 leading-relaxed">
-            AI reads thousands of sources daily so you don't have to. Get the stories that actually move markets — curated, cited, and in your inbox by 7:30 AM.
+            Get the signals that actually move your portfolio — curated, cited, delivered directly to you.
           </p>
 
           {/* CTAs */}
@@ -181,7 +188,7 @@ export function Landing() {
 
           {/* Explore feed link */}
           <Link
-            to="/feed"
+            to="/explore"
             className="text-sm text-white/30 hover:text-white/60 transition-colors mt-3 inline-block no-underline"
           >
             Or explore the app &rarr;
@@ -253,12 +260,6 @@ export function Landing() {
         >
           Why Finnopolis
         </div>
-        <h2
-          className="text-[clamp(2rem,4vw,3.2rem)] font-normal leading-tight tracking-tight mb-4"
-          style={{ fontFamily: "var(--font-headline)" }}
-        >
-          Not another newsletter — it's an app
-        </h2>
         <p className="text-white/40 text-base max-w-[500px] leading-relaxed">
           Most financial tools are one person's opinion. Finnopolis synthesizes the entire market and shows its work.
         </p>
@@ -293,25 +294,8 @@ export function Landing() {
         </div>
       </section>
 
-      {/* ── QUOTE ── */}
-      <section
-        className="landing-reveal text-center py-[100px] px-[8vw]"
-        style={{
-          background: "#111827",
-          borderTop: "1px solid rgba(255,255,255,0.06)",
-          borderBottom: "1px solid rgba(255,255,255,0.06)",
-        }}
-      >
-        <p
-          className="text-[clamp(1.5rem,3vw,2.4rem)] font-normal leading-snug italic max-w-[700px] mx-auto mb-6"
-          style={{ fontFamily: "var(--font-headline)" }}
-        >
-          "In financial news, <CitationMark n={1} /> means everything. It means someone checked."
-        </p>
-        <p className="text-white/40 text-[0.875rem] max-w-[560px] mx-auto leading-relaxed">
-          Finnopolis is built on the belief that AI should make you more informed, not less careful. Every story comes with sources, data, and clearly labeled AI inference.
-        </p>
-      </section>
+      {/* ── LIVE PREVIEW ── */}
+      <LivePreview />
 
       {/* ── CTA ── */}
       <section
@@ -691,6 +675,216 @@ function Guarantee({ text }: { text: string }) {
         <polyline points="20 6 9 17 4 12" />
       </svg>
       {text}
+    </div>
+  );
+}
+
+/* ── Live preview (S2.1 / S2.2) ── */
+
+const PREVIEW_TABS: Array<{ label: string; slug: string | null }> = [
+  { label: "All", slug: null },
+  { label: "Macro & Fed", slug: "macro" },
+  { label: "Technology", slug: "technology" },
+  { label: "Financials", slug: "financials" },
+  { label: "Energy", slug: "energy" },
+  { label: "Biotech", slug: "biotech" },
+  { label: "Regulation", slug: "regulation" },
+  { label: "Geopolitics", slug: "geopolitics" },
+];
+
+function LivePreview() {
+  const [activeLabel, setActiveLabel] = useState<string>("All");
+  const activeTab = PREVIEW_TABS.find((t) => t.label === activeLabel);
+  const { articles, loading: isLoading } = usePublicPreview(
+    activeLabel,
+    activeTab?.slug ?? null,
+    5,
+  );
+
+  return (
+    <section className="landing-reveal py-[100px] px-[8vw]">
+      <div
+        className="text-[0.7rem] uppercase tracking-[0.12em] mb-4 opacity-80"
+        style={{ fontFamily: "var(--font-mono)", color: "var(--layer1-blue)" }}
+      >
+        Live preview
+      </div>
+      <h2
+        className="text-[clamp(2rem,4vw,3.2rem)] font-normal leading-tight tracking-tight mb-4"
+        style={{ fontFamily: "var(--font-headline)" }}
+      >
+        See what members are reading right now
+      </h2>
+      <p className="text-white/40 text-base max-w-[500px] leading-relaxed mb-10">
+        A live sample of the briefs Finnopolis is publishing today, straight from the platform. Pick a topic to filter.
+      </p>
+
+      {/* Tabs */}
+      <div
+        className="flex gap-2 overflow-x-auto pb-3 mb-6"
+        style={{ scrollbarWidth: "none" }}
+      >
+        {PREVIEW_TABS.map((tab) => {
+          const selected = activeLabel === tab.label;
+          return (
+            <button
+              key={tab.label}
+              onClick={() => setActiveLabel(tab.label)}
+              className={`px-3.5 py-1.5 text-[0.8rem] font-medium whitespace-nowrap rounded-full border transition-all ${
+                selected
+                  ? "text-white bg-white/10 border-white/15"
+                  : "text-white/45 bg-transparent border-white/10 hover:text-white/70 hover:bg-white/5"
+              }`}
+            >
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Cards */}
+      <div className="grid gap-4">
+        {isLoading
+          ? Array.from({ length: 5 }).map((_, i) => (
+              <PreviewSkeleton key={i} />
+            ))
+          : articles.length === 0
+          ? (
+              <div className="text-center py-12 text-white/40 text-sm">
+                No briefs available for this topic right now.
+              </div>
+            )
+          : articles.map((article) => (
+              <PreviewCard key={article.id || article.headline} article={article} />
+            ))}
+      </div>
+    </section>
+  );
+}
+
+function PreviewSkeleton() {
+  return (
+    <div
+      className="rounded-xl p-6 animate-pulse"
+      style={{
+        background: "#111827",
+        border: "1px solid rgba(255,255,255,0.06)",
+      }}
+    >
+      <div className="h-3 w-32 bg-white/10 rounded mb-4" />
+      <div className="h-6 w-3/4 bg-white/15 rounded mb-3" />
+      <div className="h-4 w-full bg-white/10 rounded mb-2" />
+      <div className="h-4 w-5/6 bg-white/10 rounded mb-4" />
+      <div className="flex gap-2">
+        <div className="h-6 w-16 bg-white/10 rounded-full" />
+        <div className="h-6 w-12 bg-white/10 rounded" />
+      </div>
+    </div>
+  );
+}
+
+function signalBadgeStyle(signal: string): React.CSSProperties {
+  switch (signal) {
+    case "BUY":
+      return {
+        background: "rgba(34,197,94,0.1)",
+        color: "#22c55e",
+        border: "1px solid rgba(34,197,94,0.3)",
+      };
+    case "SELL":
+      return {
+        background: "rgba(239,68,68,0.1)",
+        color: "#f87171",
+        border: "1px solid rgba(239,68,68,0.3)",
+      };
+    case "MIXED":
+      return {
+        background: "rgba(245,158,11,0.1)",
+        color: "#f59e0b",
+        border: "1px solid rgba(245,158,11,0.3)",
+      };
+    case "WATCH":
+      return {
+        background: "rgba(59,130,246,0.1)",
+        color: "#3b82f6",
+        border: "1px solid rgba(59,130,246,0.3)",
+      };
+    default:
+      return {
+        background: "rgba(255,255,255,0.05)",
+        color: "rgba(255,255,255,0.5)",
+        border: "1px solid rgba(255,255,255,0.1)",
+      };
+  }
+}
+
+function PreviewCard({ article }: { article: Article }) {
+  const tickers = article.extracted_tickers ?? [];
+  return (
+    <div
+      className="rounded-xl p-6 transition-colors"
+      style={{
+        background: "#111827",
+        border: "1px solid rgba(255,255,255,0.06)",
+      }}
+    >
+      <div className="flex items-center gap-3 mb-3 flex-wrap">
+        {article.publication && (
+          <>
+            <span
+              className="text-[0.7rem] uppercase tracking-[0.12em] text-white/50"
+              style={{ fontFamily: "var(--font-mono)" }}
+            >
+              {article.publication}
+            </span>
+            <span className="text-xs text-white/30">•</span>
+          </>
+        )}
+        <span className="text-xs text-white/40">
+          {formatArticleDate(article.published_at)}
+        </span>
+      </div>
+
+      <h3
+        className="text-[1.4rem] leading-snug mb-3"
+        style={{ fontFamily: "var(--font-headline)" }}
+      >
+        {article.headline}
+      </h3>
+
+      <p className="text-white/60 text-[0.92rem] leading-relaxed mb-4 line-clamp-3">
+        {article.ai_preview}
+      </p>
+
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="flex flex-wrap gap-2">
+          {tickers.slice(0, 4).map((ticker) => (
+            <span
+              key={ticker}
+              className="px-2 py-1 text-[0.7rem] rounded"
+              style={{
+                fontFamily: "var(--font-mono)",
+                background: "rgba(255,255,255,0.05)",
+                border: "1px solid rgba(255,255,255,0.08)",
+                color: "rgba(255,255,255,0.7)",
+              }}
+            >
+              {ticker}
+            </span>
+          ))}
+          {tickers.length > 4 && (
+            <span className="px-2 py-1 text-[0.7rem] text-white/40">
+              +{tickers.length - 4} more
+            </span>
+          )}
+        </div>
+        <span
+          className="px-3 py-1 rounded-full text-[0.7rem]"
+          style={{ fontFamily: "var(--font-mono)", ...signalBadgeStyle(article.consensus_signal) }}
+        >
+          {article.consensus_signal || "NO_RATING"}
+        </span>
+      </div>
     </div>
   );
 }
