@@ -27,7 +27,7 @@ export function Privacy() {
             <ul className="list-disc pl-5 space-y-1">
               <li>An anonymous browser identifier (random UUID, stored in your browser only)</li>
               <li>Your selected topics and stock tickers</li>
-              <li>Your email address if you sign up for the digest</li>
+              <li>Your email address if you register</li>
             </ul>
           </div>
 
