@@ -76,13 +76,14 @@ Deno.serve(async (req: Request) => {
       id: string;
       headline: string;
       ai_preview: string;
+      source_url: string;
       consensus_signal: string;
     }> = [];
 
     if (topicIds.length > 0) {
       const { data: rows } = await supabase
         .from("article_topics")
-        .select("article_id, ai_articles(id, headline, ai_preview, consensus_signal)")
+        .select("article_id, ai_articles(id, headline, ai_preview, source_url, consensus_signal)")
         .in("topic_id", topicIds)
         .gt("ai_articles.published_at", new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString())
         .order("created_at", { ascending: false })
@@ -103,7 +104,7 @@ Deno.serve(async (req: Request) => {
     if (articles.length === 0) {
       const { data: latest } = await supabase
         .from("ai_articles")
-        .select("id, headline, ai_preview, consensus_signal")
+        .select("id, headline, ai_preview, source_url, consensus_signal")
         .eq("processing_status", "complete")
         .gt("published_at", new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString())
         .order("published_at", { ascending: false })
@@ -177,7 +178,7 @@ function escapeHtml(str: string): string {
 // ─── Email template ──────────────────────────────────────────────────
 
 function renderWelcomeEmail(
-  articles: Array<{ id: string; headline: string; ai_preview: string; consensus_signal: string }>,
+  articles: Array<{ id: string; headline: string; ai_preview: string; source_url: string; consensus_signal: string }>,
   topics: Array<{ display_name: string }>,
   tickers: string[],
   feedUrl: string,
