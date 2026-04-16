@@ -76,16 +76,13 @@ Deno.serve(async (req: Request) => {
       id: string;
       headline: string;
       ai_preview: string;
-      source_url: string;
-      publication: string;
-      published_at: string;
       consensus_signal: string;
     }> = [];
 
     if (topicIds.length > 0) {
       const { data: rows } = await supabase
         .from("article_topics")
-        .select("article_id, ai_articles(id, headline, ai_preview, source_url, publication, published_at, consensus_signal)")
+        .select("article_id, ai_articles(id, headline, ai_preview, consensus_signal)")
         .in("topic_id", topicIds)
         .gt("ai_articles.published_at", new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString())
         .order("created_at", { ascending: false })
@@ -106,7 +103,7 @@ Deno.serve(async (req: Request) => {
     if (articles.length === 0) {
       const { data: latest } = await supabase
         .from("ai_articles")
-        .select("id, headline, ai_preview, source_url, publication, published_at, consensus_signal")
+        .select("id, headline, ai_preview, consensus_signal")
         .eq("processing_status", "complete")
         .gt("published_at", new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString())
         .order("published_at", { ascending: false })
@@ -119,9 +116,10 @@ Deno.serve(async (req: Request) => {
       ? `${SITE_BASE_URL}?t=${sub.feed_token}`
       : SITE_BASE_URL;
     const unsubUrl = `${SITE_BASE_URL}/unsubscribe?token=${sub.unsubscribe_token}`;
+    const tokenParam = sub.feed_token ? `?t=${sub.feed_token}` : "";
 
     // 6. Build and send email
-    const html = renderWelcomeEmail(articles, topics, tickerList, feedUrl, unsubUrl);
+    const html = renderWelcomeEmail(articles, topics, tickerList, feedUrl, unsubUrl, tokenParam);
 
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
@@ -179,11 +177,12 @@ function escapeHtml(str: string): string {
 // ─── Email template ──────────────────────────────────────────────────
 
 function renderWelcomeEmail(
-  articles: Array<{ headline: string; ai_preview: string; source_url: string; publication: string; consensus_signal: string }>,
+  articles: Array<{ id: string; headline: string; ai_preview: string; consensus_signal: string }>,
   topics: Array<{ display_name: string }>,
   tickers: string[],
   feedUrl: string,
   unsubUrl: string,
+  tokenParam: string,
 ): string {
   const topicNames = topics.map(t => t.display_name).join(", ") || "None selected";
   const tickerNames = tickers.length > 0 ? tickers.join(", ") : "None selected";
@@ -194,18 +193,27 @@ function renderWelcomeEmail(
       a.consensus_signal === "SELL" ? "#ef4444" :
       a.consensus_signal === "MIXED" ? "#eab308" : "#6b7280";
 
+    const signalBg =
+      a.consensus_signal === "BUY" ? "#052e16" :
+      a.consensus_signal === "SELL" ? "#450a0a" :
+      a.consensus_signal === "MIXED" ? "#422006" : "#1f2937";
+
+    const articleUrl = `${SITE_BASE_URL}/article/${a.id}${tokenParam}`;
+
     return `
       <div style="background:#152638;border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:20px;margin-bottom:12px;">
-        <div style="font-size:12px;color:#6b7280;font-family:monospace;margin-bottom:6px;">
-          ${escapeHtml(a.publication ?? "")}
-          <span style="color:${signalColor};margin-left:8px;">\u25CF ${escapeHtml(a.consensus_signal ?? "")}</span>
-        </div>
-        <a href="${escapeHtml(a.source_url)}" style="color:#ffffff;text-decoration:none;font-size:16px;font-weight:500;line-height:1.4;display:block;margin-bottom:8px;">
+        <a href="${articleUrl}" style="color:#ffffff;text-decoration:none;font-size:16px;font-weight:500;line-height:1.4;display:block;margin-bottom:8px;">
           ${escapeHtml(a.headline)}
         </a>
-        <p style="color:#9ca3af;font-size:13px;line-height:1.5;margin:0;">
+        <p style="color:#9ca3af;font-size:13px;line-height:1.5;margin:0 0 12px;">
           ${escapeHtml(a.ai_preview ?? "")}
         </p>
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <span style="display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-family:monospace;background:${signalBg};color:${signalColor};border:1px solid ${signalColor}40;">
+            ${escapeHtml(a.consensus_signal ?? "NO_RATING")}
+          </span>
+          <a href="${articleUrl}" style="color:#60a5fa;font-size:12px;text-decoration:none;">Read analysis &#8594;</a>
+        </div>
       </div>`;
   }).join("");
 
@@ -231,7 +239,7 @@ function renderWelcomeEmail(
     <div style="margin-bottom:32px;">
       <h2 style="font-size:22px;font-weight:500;margin:0 0 12px;color:#ffffff;">You\u2019re in</h2>
       <p style="font-size:15px;color:#9ca3af;line-height:1.6;margin:0 0 20px;">
-        Every morning, you\u2019ll receive your morning brief \u2014 AI-curated financial intelligence, in your inbox by 7:30 AM. Here\u2019s a preview of what\u2019s waiting for you.
+        Your Finnopolis account is set up. Every morning at 7:30 AM, we\u2019ll send you a notification with what\u2019s moving in your markets. Here\u2019s what\u2019s trending in your feed right now.
       </p>
 
       <!-- Profile summary -->
@@ -251,7 +259,7 @@ function renderWelcomeEmail(
     ${articles.length > 0 ? `
     <div style="margin-bottom:32px;">
       <h3 style="font-size:14px;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;font-family:monospace;margin:0 0 16px;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,0.1);">
-        Your first briefs
+        Trending in your feed
       </h3>
       ${articleCards}
     </div>
@@ -267,11 +275,14 @@ function renderWelcomeEmail(
     <!-- Footer -->
     <table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="padding:32px 24px 24px;border-top:1px solid rgba(255,255,255,0.1);">
       <p style="font-size:13px;color:#6b7280;line-height:1.5;margin:0 0 12px;"><strong>Finnopolis</strong> \u2014 AI-curated financial intelligence.</p>
+      <p style="font-size:11px;color:#6b7280;line-height:1.5;margin:0 0 12px;">
+        Finnopolis is for informational purposes only. Nothing here constitutes investment advice, a recommendation, or a solicitation to buy or sell any security.
+      </p>
       <p style="font-size:11px;color:#9ca3af;margin:0 0 8px;">
         <a href="${SITE_BASE_URL}/privacy" style="color:#9ca3af;">Privacy Policy</a> \u00B7
         <a href="${SITE_BASE_URL}/terms" style="color:#9ca3af;">Terms</a> \u00B7
         <a href="${unsubUrl}" style="color:#9ca3af;">Unsubscribe</a></p>
-      <p style="font-size:11px;color:#9ca3af;margin:0;">You\u2019re receiving this because you signed up at finnopolis.com. \u00A9 2026 Finnopolis.</p>
+      <p style="font-size:11px;color:#9ca3af;margin:0;">This is a notification from your Finnopolis account. \u00A9 2026 Finnopolis.</p>
     </td></tr></table>
 
   </div>

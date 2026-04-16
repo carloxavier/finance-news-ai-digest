@@ -334,7 +334,7 @@ function renderDigestEmail(
       return `
         <div style="background:#152638;border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:24px;margin-bottom:16px;">
           <div style="font-size:12px;color:#6b7280;font-family:monospace;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">
-            ${article.publication} · ${formatArticleTime(article.published_at, subscriber.timezone)}
+            ${article.publication ? `${escapeHtml(article.publication)} &#183; ` : ""}${formatArticleTime(article.published_at, subscriber.timezone)}
           </div>
           <a href="${url}" style="color:#ffffff;text-decoration:none;font-size:18px;font-weight:500;line-height:1.4;display:block;margin-bottom:10px;">
             ${escapeHtml(article.headline)}
@@ -386,18 +386,21 @@ function renderDigestEmail(
     <!-- CTA -->
     <div style="text-align:center;margin:32px 0;">
       <a href="${feedUrl}" style="display:inline-block;padding:12px 32px;background:#3b82f6;color:#ffffff;text-decoration:none;border-radius:8px;font-size:14px;">
-        Open in Finnopolis →
+        Open Finnopolis &#8594;
       </a>
     </div>
 
     <!-- Footer -->
-    <table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="padding:32px 24px 24px;border-top:1px solid #e5e7eb;">
-      <p style="font-size:13px;color:#6b7280;line-height:1.5;margin:0 0 12px;"><strong>Finnopolis</strong> — AI-curated financial intelligence.</p>
+    <table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="padding:32px 24px 24px;border-top:1px solid rgba(255,255,255,0.1);">
+      <p style="font-size:13px;color:#6b7280;line-height:1.5;margin:0 0 12px;"><strong>Finnopolis</strong> &#8212; AI-curated financial intelligence.</p>
+      <p style="font-size:11px;color:#6b7280;line-height:1.5;margin:0 0 12px;">
+        Finnopolis is for informational purposes only. Nothing here constitutes investment advice, a recommendation, or a solicitation to buy or sell any security.
+      </p>
       <p style="font-size:11px;color:#9ca3af;margin:0 0 8px;">
-        <a href="${SITE_BASE_URL}/privacy" style="color:#9ca3af;">Privacy Policy</a> ·
-        <a href="${SITE_BASE_URL}/terms" style="color:#9ca3af;">Terms</a> ·
+        <a href="${SITE_BASE_URL}/privacy" style="color:#9ca3af;">Privacy Policy</a> &#183;
+        <a href="${SITE_BASE_URL}/terms" style="color:#9ca3af;">Terms</a> &#183;
         <a href="${SITE_BASE_URL}/unsubscribe?token=${subscriber.unsubscribe_token}" style="color:#9ca3af;">Unsubscribe</a></p>
-      <p style="font-size:11px;color:#9ca3af;margin:0;">You're receiving this because you signed up at finnopolis.com. © 2026 Finnopolis.</p>
+      <p style="font-size:11px;color:#9ca3af;margin:0;">This is a notification from your Finnopolis account. &#169; 2026 Finnopolis.</p>
     </td></tr></table>
 
   </div>
