@@ -4,15 +4,20 @@
 // Deployed via Supabase MCP — this file is the local source of truth.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
+import {
+  SITE_BASE_URL,
+  escapeHtml,
+  jsonResponse,
+  renderEmailLayout,
+  sendEmail,
+  signalBg,
+  signalColor,
+} from "../_shared/email.ts";
 
-const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY")!;
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-const SITE_BASE_URL = "https://finnopolis.com";
 const TRACK_CLICK_URL = `${SUPABASE_URL}/functions/v1/track-click`;
-const FROM_EMAIL = "Finnopolis <digest@finnopolis.com>";
-const REPLY_TO = "carlo@finnopolis.com";
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -132,10 +137,10 @@ Deno.serve(async (req: Request) => {
         const userTickers = (tickerRows || []).map((r: { ticker: string }) => r.ticker);
 
         // Build and send email
-        const html = renderDigestEmail(articlesWithTokens, userTickers, sub, sent + failed + 1);
+        const html = renderDigestEmail(articlesWithTokens, userTickers, sub);
         const subject = `📊 Your morning brief — ${formatDate(new Date())}`;
 
-        await sendEmail(sub.email, subject, html, batchId);
+        await sendEmail({ to: sub.email, subject, html, batchId });
 
         // Record sent articles with click tokens
         const sentRecords = articlesWithTokens.map(a => ({
@@ -232,41 +237,6 @@ async function getSubscriberArticles(
   }));
 }
 
-async function sendEmail(to: string, subject: string, html: string, batchId?: string): Promise<void> {
-  const payload: Record<string, unknown> = {
-    from: FROM_EMAIL,
-    to: [to],
-    subject,
-    html,
-    reply_to: REPLY_TO,
-  };
-
-  if (batchId) {
-    payload.tags = [{ name: "digest_batch", value: batchId }];
-  }
-
-  const res = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${RESEND_API_KEY}`,
-    },
-    body: JSON.stringify(payload),
-  });
-
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Resend API error ${res.status}: ${body}`);
-  }
-}
-
-function jsonResponse(data: unknown, status = 200): Response {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
-}
-
 function formatDate(d: Date): string {
   return d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
 }
@@ -297,122 +267,70 @@ function renderDigestEmail(
   articles: ArticleWithToken[],
   userTickers: string[],
   subscriber: Subscriber,
-  dayNumber: number
 ): string {
   const feedUrl = `${SITE_BASE_URL}?t=${subscriber.feed_token}`;
+  const unsubUrl = `${SITE_BASE_URL}/unsubscribe?token=${subscriber.unsubscribe_token}`;
 
   const articleCards = articles
-    .map((article) => {
-      // Use tracked click URL for article links
-      const url = `${TRACK_CLICK_URL}?t=${article.clickToken}`;
-
-      const signalColor =
-        article.consensus_signal === "BUY" ? "#22c55e" :
-        article.consensus_signal === "SELL" ? "#ef4444" :
-        article.consensus_signal === "MIXED" ? "#eab308" : "#6b7280";
-
-      const signalBg =
-        article.consensus_signal === "BUY" ? "#052e16" :
-        article.consensus_signal === "SELL" ? "#450a0a" :
-        article.consensus_signal === "MIXED" ? "#422006" : "#1f2937";
-
-      const tickerHtml = (article.extracted_tickers || [])
-        .slice(0, 4)
-        .map((t) => {
-          const isUserTicker = userTickers.includes(t);
-          const style = isUserTicker
-            ? "display:inline-block;padding:2px 8px;border-radius:4px;font-size:12px;font-family:monospace;background:#1e3a5f;color:#60a5fa;border:1px solid #3b82f6;"
-            : "display:inline-block;padding:2px 8px;border-radius:4px;font-size:12px;font-family:monospace;background:#1f2937;color:#9ca3af;border:1px solid #374151;";
-          return `<span style="${style}">${t}</span>`;
-        })
-        .join(" ");
-
-      const watchItem = (article.inference_watch && article.inference_watch.length > 0)
-        ? article.inference_watch[0]
-        : null;
-
-      return `
-        <div style="background:#152638;border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:24px;margin-bottom:16px;">
-          <div style="font-size:12px;color:#6b7280;font-family:monospace;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">
-            ${article.publication ? `${escapeHtml(article.publication)} &#183; ` : ""}${formatArticleTime(article.published_at, subscriber.timezone)}
-          </div>
-          <a href="${url}" style="color:#ffffff;text-decoration:none;font-size:18px;font-weight:500;line-height:1.4;display:block;margin-bottom:10px;">
-            ${escapeHtml(article.headline)}
-          </a>
-          <p style="color:#9ca3af;font-size:14px;line-height:1.6;margin:0 0 14px 0;">
-            ${escapeHtml(article.ai_preview)}
-          </p>
-          ${watchItem ? `
-          <div style="background:#1a1a2e;border-left:3px solid #f59e0b;padding:10px 14px;border-radius:0 8px 8px 0;margin-bottom:14px;">
-            <div style="font-size:11px;color:#f59e0b;font-family:monospace;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;">What to watch</div>
-            <div style="font-size:13px;color:#d1d5db;line-height:1.5;">${escapeHtml(watchItem)}</div>
-          </div>
-          ` : ""}
-          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
-            <div>${tickerHtml}</div>
-            <span style="display:inline-block;padding:3px 12px;border-radius:20px;font-size:12px;font-family:monospace;background:${signalBg};color:${signalColor};border:1px solid ${signalColor}40;">
-              ${article.consensus_signal}
-            </span>
-          </div>
-        </div>
-      `;
-    })
+    .map((article) => renderArticleCard(article, userTickers, subscriber.timezone))
     .join("");
 
-  return `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Finnopolis</title>
-</head>
-<body style="margin:0;padding:0;background-color:#0d1b2a;color:#ffffff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
-  <div style="max-width:600px;margin:0 auto;padding:32px 16px;">
-
-    <!-- Header -->
-    <div style="text-align:center;margin-bottom:32px;padding-bottom:24px;border-bottom:1px solid rgba(255,255,255,0.1);">
-      <a href="${feedUrl}" style="color:#ffffff;text-decoration:none;">
-        <h1 style="margin:0;font-size:28px;font-weight:400;letter-spacing:-0.5px;">Finnopolis</h1>
-      </a>
-      <p style="margin:8px 0 0;font-size:14px;color:#6b7280;">
-        ${formatDate(new Date())} · Your morning brief
-      </p>
-    </div>
-
-    <!-- Articles -->
-    ${articleCards}
-
-    <!-- CTA -->
-    <div style="text-align:center;margin:32px 0;">
-      <a href="${feedUrl}" style="display:inline-block;padding:12px 32px;background:#3b82f6;color:#ffffff;text-decoration:none;border-radius:8px;font-size:14px;">
-        Open Finnopolis &#8594;
-      </a>
-    </div>
-
-    <!-- Footer -->
-    <table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="padding:32px 24px 24px;border-top:1px solid rgba(255,255,255,0.1);">
-      <p style="font-size:13px;color:#6b7280;line-height:1.5;margin:0 0 12px;"><strong>Finnopolis</strong> &#8212; AI-curated financial intelligence.</p>
-      <p style="font-size:11px;color:#6b7280;line-height:1.5;margin:0 0 12px;">
-        Finnopolis is for informational purposes only. Nothing here constitutes investment advice, a recommendation, or a solicitation to buy or sell any security.
-      </p>
-      <p style="font-size:11px;color:#9ca3af;margin:0 0 8px;">
-        <a href="${SITE_BASE_URL}/privacy" style="color:#9ca3af;">Privacy Policy</a> &#183;
-        <a href="${SITE_BASE_URL}/terms" style="color:#9ca3af;">Terms</a> &#183;
-        <a href="${SITE_BASE_URL}/unsubscribe?token=${subscriber.unsubscribe_token}" style="color:#9ca3af;">Unsubscribe</a></p>
-      <p style="font-size:11px;color:#9ca3af;margin:0;">This is a notification from your Finnopolis account. &#169; 2026 Finnopolis.</p>
-    </td></tr></table>
-
-  </div>
-</body>
-</html>
-  `.trim();
+  return renderEmailLayout({
+    feedUrl,
+    unsubUrl,
+    title: "Finnopolis",
+    subheader: `${formatDate(new Date())} · Your morning brief`,
+    body: articleCards,
+  });
 }
 
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+function renderArticleCard(
+  article: ArticleWithToken,
+  userTickers: string[],
+  timezone: string,
+): string {
+  const url = `${TRACK_CLICK_URL}?t=${article.clickToken}`;
+  const color = signalColor(article.consensus_signal);
+  const bg = signalBg(article.consensus_signal);
+
+  const tickerHtml = (article.extracted_tickers || [])
+    .slice(0, 4)
+    .map((t) => {
+      const isUserTicker = userTickers.includes(t);
+      const style = isUserTicker
+        ? "display:inline-block;padding:2px 8px;border-radius:4px;font-size:12px;font-family:monospace;background:#1e3a5f;color:#60a5fa;border:1px solid #3b82f6;"
+        : "display:inline-block;padding:2px 8px;border-radius:4px;font-size:12px;font-family:monospace;background:#1f2937;color:#9ca3af;border:1px solid #374151;";
+      return `<span style="${style}">${t}</span>`;
+    })
+    .join(" ");
+
+  const watchItem = (article.inference_watch && article.inference_watch.length > 0)
+    ? article.inference_watch[0]
+    : null;
+
+  return `
+    <div style="background:#152638;border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:24px;margin-bottom:16px;">
+      <div style="font-size:12px;color:#6b7280;font-family:monospace;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">
+        ${article.publication ? `${escapeHtml(article.publication)} &#183; ` : ""}${formatArticleTime(article.published_at, timezone)}
+      </div>
+      <a href="${url}" style="color:#ffffff;text-decoration:none;font-size:18px;font-weight:500;line-height:1.4;display:block;margin-bottom:10px;">
+        ${escapeHtml(article.headline)}
+      </a>
+      <p style="color:#9ca3af;font-size:14px;line-height:1.6;margin:0 0 14px 0;">
+        ${escapeHtml(article.ai_preview)}
+      </p>
+      ${watchItem ? `
+      <div style="background:#1a1a2e;border-left:3px solid #f59e0b;padding:10px 14px;border-radius:0 8px 8px 0;margin-bottom:14px;">
+        <div style="font-size:11px;color:#f59e0b;font-family:monospace;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;">What to watch</div>
+        <div style="font-size:13px;color:#d1d5db;line-height:1.5;">${escapeHtml(watchItem)}</div>
+      </div>
+      ` : ""}
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+        <div>${tickerHtml}</div>
+        <span style="display:inline-block;padding:3px 12px;border-radius:20px;font-size:12px;font-family:monospace;background:${bg};color:${color};border:1px solid ${color}40;">
+          ${article.consensus_signal}
+        </span>
+      </div>
+    </div>
+  `;
 }
