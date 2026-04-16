@@ -64,7 +64,7 @@ export function Unsubscribe() {
               Unsubscribed
             </h1>
             <p className="text-white/60 mb-8">
-              You've been unsubscribed from the Finnopolis digest. You won't receive any more emails from us.
+              You've been unsubscribed from Finnopolis notifications. You won't receive any more emails from us.
             </p>
           </>
         )}

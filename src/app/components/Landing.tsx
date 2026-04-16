@@ -91,7 +91,7 @@ export function Landing() {
       setSubmitted(true);
     } catch (err) {
       if (err instanceof EmailAlreadyRegisteredError) {
-        setError("This email is already registered. Try a different one or check your inbox for your existing digest.");
+        setError("This email is already registered. Try a different one or check your inbox for your welcome email.");
       } else {
         setError("Something went wrong. Please try again.");
       }
@@ -281,7 +281,7 @@ export function Landing() {
               icon="&#127919;"
               label="Personalization"
               title="Topics you choose"
-              desc="Follow Fed policy, crypto, AI semiconductors, or ESG. Your digest matches your portfolio focus."
+              desc="Follow Fed policy, crypto, AI semiconductors, or ESG. Your feed matches your portfolio focus."
             />
             <WhyCell
               iconColor="rgba(245,158,11,0.1)"
@@ -450,7 +450,7 @@ function DemoCard() {
           <span className="w-2.5 h-2.5 rounded-full bg-green-500" />
         </div>
         <div className="ml-auto text-[0.7rem] text-white/40" style={{ fontFamily: "var(--font-mono)" }}>
-          finnopolis.com/digest
+          finnopolis.com/feed
         </div>
       </div>
 

@@ -34,7 +34,7 @@ export function Privacy() {
           <div>
             <h2 className="text-[18px] font-semibold text-white mb-3">How we use it</h2>
             <p>
-              We use your data solely to personalise your financial news feed and deliver the email digest you signed up
+              We use your data solely to personalise your financial news feed and deliver the daily briefing you signed up
               for. We do not sell, rent, or share your data with third parties.
             </p>
           </div>
@@ -42,7 +42,7 @@ export function Privacy() {
           <div>
             <h2 className="text-[18px] font-semibold text-white mb-3">Email</h2>
             <p>
-              Digest emails are sent via Resend. Every email includes a one-click unsubscribe link. We honour
+              Notification emails are sent via Resend. Every email includes a one-click unsubscribe link. We honour
               unsubscribe requests immediately.
             </p>
           </div>

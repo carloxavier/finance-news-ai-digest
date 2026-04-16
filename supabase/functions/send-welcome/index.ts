@@ -4,14 +4,18 @@
 // Deployed with verify_jwt=false (called from frontend with anon key)
 
 import { createClient } from "npm:@supabase/supabase-js@2";
+import {
+  SITE_BASE_URL,
+  escapeHtml,
+  jsonResponse,
+  renderEmailLayout,
+  sendEmail,
+  signalBg,
+  signalColor,
+} from "../_shared/email.ts";
 
-const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY")!;
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-
-const SITE_BASE_URL = "https://finnopolis.com";
-const FROM_EMAIL = "Finnopolis <digest@finnopolis.com>";
-const REPLY_TO = "carlo@finnopolis.com";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -19,6 +23,14 @@ const CORS_HEADERS = {
   "Access-Control-Allow-Headers": "authorization, apikey, content-type, x-client-info",
   "Access-Control-Max-Age": "86400",
 };
+
+interface Article {
+  id: string;
+  headline: string;
+  ai_preview: string;
+  source_url: string;
+  consensus_signal: string;
+}
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -32,7 +44,7 @@ Deno.serve(async (req: Request) => {
   try {
     const { subscriber_id } = await req.json();
     if (!subscriber_id) {
-      return jsonResponse({ error: "subscriber_id required" }, 400);
+      return jsonResponse({ error: "subscriber_id required" }, 400, CORS_HEADERS);
     }
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
@@ -47,7 +59,7 @@ Deno.serve(async (req: Request) => {
 
     if (!sub) {
       console.log("Subscriber not found or already welcomed:", subscriber_id);
-      return jsonResponse({ error: "Not found or already welcomed" }, 404);
+      return jsonResponse({ error: "Not found or already welcomed" }, 404, CORS_HEADERS);
     }
 
     // 2. Fetch subscriber's topics
@@ -72,20 +84,12 @@ Deno.serve(async (req: Request) => {
     }
 
     // 4. Fetch top 5 articles matching their topics
-    let articles: Array<{
-      id: string;
-      headline: string;
-      ai_preview: string;
-      source_url: string;
-      publication: string;
-      published_at: string;
-      consensus_signal: string;
-    }> = [];
+    let articles: Article[] = [];
 
     if (topicIds.length > 0) {
       const { data: rows } = await supabase
         .from("article_topics")
-        .select("article_id, ai_articles(id, headline, ai_preview, source_url, publication, published_at, consensus_signal)")
+        .select("article_id, ai_articles(id, headline, ai_preview, source_url, consensus_signal)")
         .in("topic_id", topicIds)
         .gt("ai_articles.published_at", new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString())
         .order("created_at", { ascending: false })
@@ -93,7 +97,7 @@ Deno.serve(async (req: Request) => {
 
       const seen = new Set<string>();
       for (const row of rows ?? []) {
-        const a = (row as Record<string, unknown>).ai_articles as typeof articles[number] | null;
+        const a = (row as Record<string, unknown>).ai_articles as Article | null;
         if (a && !seen.has(a.id)) {
           seen.add(a.id);
           articles.push(a);
@@ -106,7 +110,7 @@ Deno.serve(async (req: Request) => {
     if (articles.length === 0) {
       const { data: latest } = await supabase
         .from("ai_articles")
-        .select("id, headline, ai_preview, source_url, publication, published_at, consensus_signal")
+        .select("id, headline, ai_preview, source_url, consensus_signal")
         .eq("processing_status", "complete")
         .gt("published_at", new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString())
         .order("published_at", { ascending: false })
@@ -119,29 +123,28 @@ Deno.serve(async (req: Request) => {
       ? `${SITE_BASE_URL}?t=${sub.feed_token}`
       : SITE_BASE_URL;
     const unsubUrl = `${SITE_BASE_URL}/unsubscribe?token=${sub.unsubscribe_token}`;
+    const tokenParam = sub.feed_token ? `?t=${sub.feed_token}` : "";
 
     // 6. Build and send email
-    const html = renderWelcomeEmail(articles, topics, tickerList, feedUrl, unsubUrl);
-
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${RESEND_API_KEY}`,
-      },
-      body: JSON.stringify({
-        from: FROM_EMAIL,
-        to: [sub.email],
-        subject: "You\u2019re in \u2014 your first brief is ready",
-        html,
-        reply_to: REPLY_TO,
-      }),
+    const html = renderWelcomeEmail({
+      articles,
+      topics,
+      tickers: tickerList,
+      feedUrl,
+      unsubUrl,
+      tokenParam,
     });
 
-    if (!res.ok) {
-      const body = await res.text();
-      console.error("Resend API error:", res.status, body);
-      return jsonResponse({ error: "Failed to send email" }, 500);
+    try {
+      await sendEmail({
+        to: sub.email,
+        subject: "You\u2019re in \u2014 your first brief is ready",
+        html,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("Resend API error:", msg);
+      return jsonResponse({ error: "Failed to send email" }, 500, CORS_HEADERS);
     }
 
     // 7. Mark welcome sent
@@ -151,87 +154,44 @@ Deno.serve(async (req: Request) => {
       .eq("id", subscriber_id);
 
     console.log(`Welcome email sent to ${sub.email}`);
-    return jsonResponse({ success: true });
+    return jsonResponse({ success: true }, 200, CORS_HEADERS);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error("Welcome email error:", msg);
-    return jsonResponse({ error: msg }, 500);
+    return jsonResponse({ error: msg }, 500, CORS_HEADERS);
   }
 });
 
-// ─── Helpers ─────────────────────────────────────────────────────────
-
-function jsonResponse(data: unknown, status = 200): Response {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { "Content-Type": "application/json", ...CORS_HEADERS },
-  });
-}
-
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
 // ─── Email template ──────────────────────────────────────────────────
 
-function renderWelcomeEmail(
-  articles: Array<{ headline: string; ai_preview: string; source_url: string; publication: string; consensus_signal: string }>,
-  topics: Array<{ display_name: string }>,
-  tickers: string[],
-  feedUrl: string,
-  unsubUrl: string,
-): string {
+interface RenderWelcomeEmailOptions {
+  articles: Article[];
+  topics: Array<{ display_name: string }>;
+  tickers: string[];
+  feedUrl: string;
+  unsubUrl: string;
+  tokenParam: string;
+}
+
+function renderWelcomeEmail({
+  articles,
+  topics,
+  tickers,
+  feedUrl,
+  unsubUrl,
+  tokenParam,
+}: RenderWelcomeEmailOptions): string {
   const topicNames = topics.map(t => t.display_name).join(", ") || "None selected";
   const tickerNames = tickers.length > 0 ? tickers.join(", ") : "None selected";
 
-  const articleCards = articles.map(a => {
-    const signalColor =
-      a.consensus_signal === "BUY" ? "#22c55e" :
-      a.consensus_signal === "SELL" ? "#ef4444" :
-      a.consensus_signal === "MIXED" ? "#eab308" : "#6b7280";
+  const articleCards = articles.map(a => renderArticleCard(a, tokenParam)).join("");
 
-    return `
-      <div style="background:#152638;border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:20px;margin-bottom:12px;">
-        <div style="font-size:12px;color:#6b7280;font-family:monospace;margin-bottom:6px;">
-          ${escapeHtml(a.publication ?? "")}
-          <span style="color:${signalColor};margin-left:8px;">\u25CF ${escapeHtml(a.consensus_signal ?? "")}</span>
-        </div>
-        <a href="${escapeHtml(a.source_url)}" style="color:#ffffff;text-decoration:none;font-size:16px;font-weight:500;line-height:1.4;display:block;margin-bottom:8px;">
-          ${escapeHtml(a.headline)}
-        </a>
-        <p style="color:#9ca3af;font-size:13px;line-height:1.5;margin:0;">
-          ${escapeHtml(a.ai_preview ?? "")}
-        </p>
-      </div>`;
-  }).join("");
-
-  return `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Welcome to Finnopolis</title>
-</head>
-<body style="margin:0;padding:0;background-color:#0d1b2a;color:#ffffff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
-  <div style="max-width:600px;margin:0 auto;padding:32px 16px;">
-
-    <!-- Header -->
-    <div style="text-align:center;margin-bottom:32px;padding-bottom:24px;border-bottom:1px solid rgba(255,255,255,0.1);">
-      <a href="${feedUrl}" style="color:#ffffff;text-decoration:none;">
-        <h1 style="margin:0;font-size:28px;font-weight:400;letter-spacing:-0.5px;">Finnopolis</h1>
-      </a>
-    </div>
-
+  const body = `
     <!-- Welcome message -->
     <div style="margin-bottom:32px;">
       <h2 style="font-size:22px;font-weight:500;margin:0 0 12px;color:#ffffff;">You\u2019re in</h2>
       <p style="font-size:15px;color:#9ca3af;line-height:1.6;margin:0 0 20px;">
-        Every morning, you\u2019ll receive your morning brief \u2014 AI-curated financial intelligence, in your inbox by 7:30 AM. Here\u2019s a preview of what\u2019s waiting for you.
+        Your Finnopolis account is set up. Every morning at 7:30 AM, we\u2019ll send you a notification with what\u2019s moving in your markets. Here\u2019s what\u2019s trending in your feed right now.
       </p>
 
       <!-- Profile summary -->
@@ -247,34 +207,42 @@ function renderWelcomeEmail(
       </div>
     </div>
 
-    <!-- Articles preview -->
     ${articles.length > 0 ? `
     <div style="margin-bottom:32px;">
       <h3 style="font-size:14px;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;font-family:monospace;margin:0 0 16px;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,0.1);">
-        Your first briefs
+        Trending in your feed
       </h3>
       ${articleCards}
     </div>
     ` : ""}
+  `;
 
-    <!-- CTA -->
-    <div style="text-align:center;margin:32px 0;">
-      <a href="${feedUrl}" style="display:inline-block;padding:12px 32px;background:#3b82f6;color:#ffffff;text-decoration:none;border-radius:8px;font-size:14px;">
-        Open Finnopolis \u2192
+  return renderEmailLayout({
+    feedUrl,
+    unsubUrl,
+    title: "Welcome to Finnopolis",
+    body,
+  });
+}
+
+function renderArticleCard(a: Article, tokenParam: string): string {
+  const articleUrl = `${SITE_BASE_URL}/article/${a.id}${tokenParam}`;
+  const color = signalColor(a.consensus_signal);
+  const bg = signalBg(a.consensus_signal);
+
+  return `
+    <div style="background:#152638;border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:20px;margin-bottom:12px;">
+      <a href="${articleUrl}" style="color:#ffffff;text-decoration:none;font-size:16px;font-weight:500;line-height:1.4;display:block;margin-bottom:8px;">
+        ${escapeHtml(a.headline)}
       </a>
-    </div>
-
-    <!-- Footer -->
-    <table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="padding:32px 24px 24px;border-top:1px solid rgba(255,255,255,0.1);">
-      <p style="font-size:13px;color:#6b7280;line-height:1.5;margin:0 0 12px;"><strong>Finnopolis</strong> \u2014 AI-curated financial intelligence.</p>
-      <p style="font-size:11px;color:#9ca3af;margin:0 0 8px;">
-        <a href="${SITE_BASE_URL}/privacy" style="color:#9ca3af;">Privacy Policy</a> \u00B7
-        <a href="${SITE_BASE_URL}/terms" style="color:#9ca3af;">Terms</a> \u00B7
-        <a href="${unsubUrl}" style="color:#9ca3af;">Unsubscribe</a></p>
-      <p style="font-size:11px;color:#9ca3af;margin:0;">You\u2019re receiving this because you signed up at finnopolis.com. \u00A9 2026 Finnopolis.</p>
-    </td></tr></table>
-
-  </div>
-</body>
-</html>`.trim();
+      <p style="color:#9ca3af;font-size:13px;line-height:1.5;margin:0 0 12px;">
+        ${escapeHtml(a.ai_preview ?? "")}
+      </p>
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <span style="display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-family:monospace;background:${bg};color:${color};border:1px solid ${color}40;">
+          ${escapeHtml(a.consensus_signal ?? "NO_RATING")}
+        </span>
+        <a href="${articleUrl}" style="color:#60a5fa;font-size:12px;text-decoration:none;">Read analysis &#8594;</a>
+      </div>
+    </div>`;
 }
