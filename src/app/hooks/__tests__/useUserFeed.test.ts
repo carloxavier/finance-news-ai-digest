@@ -11,6 +11,7 @@ vi.mock("../../utils/supabase", async () => {
     getUserFeed: vi.fn(),
     getSubscriberFeed: vi.fn(),
     getArticlesByTopicSlugs: vi.fn(),
+    getGeneralFeed: vi.fn(),
   };
 });
 
@@ -28,6 +29,7 @@ import {
   getUserFeed,
   getSubscriberFeed,
   getArticlesByTopicSlugs,
+  getGeneralFeed,
 } from "../../utils/supabase";
 import { getUserId, getFeedToken, clearFeedToken } from "../../utils/userId";
 import { findGroupByLabel } from "../../utils/topicGroups";
@@ -50,6 +52,7 @@ describe("useUserFeed", () => {
     vi.mocked(getUserFeed).mockReset();
     vi.mocked(getSubscriberFeed).mockReset();
     vi.mocked(getArticlesByTopicSlugs).mockReset();
+    vi.mocked(getGeneralFeed).mockReset();
     vi.mocked(getUserId).mockReset().mockReturnValue("user-xyz");
     vi.mocked(getFeedToken).mockReset().mockReturnValue(null);
     vi.mocked(clearFeedToken).mockReset();
@@ -57,17 +60,18 @@ describe("useUserFeed", () => {
   });
 
   it("does nothing when disabled", () => {
-    renderHook(() => useUserFeed(null, false));
+    renderHook(() => useUserFeed("brief", "", false));
     expect(getUserFeed).not.toHaveBeenCalled();
     expect(getSubscriberFeed).not.toHaveBeenCalled();
     expect(getArticlesByTopicSlugs).not.toHaveBeenCalled();
+    expect(getGeneralFeed).not.toHaveBeenCalled();
   });
 
-  it("fetches user feed by id when no token and no active group", async () => {
+  it("fetches user feed by id when mode is brief and no token", async () => {
     const articles = [makeArticle("u1")];
     vi.mocked(getUserFeed).mockResolvedValue(articles);
 
-    const { result } = renderHook(() => useUserFeed(null, true));
+    const { result } = renderHook(() => useUserFeed("brief", "", true));
 
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(getUserFeed).toHaveBeenCalledWith("user-xyz");
@@ -76,7 +80,7 @@ describe("useUserFeed", () => {
     expect(result.current.error).toBeNull();
   });
 
-  it("fetches subscriber feed when a token is present", async () => {
+  it("fetches subscriber feed when a token is present in brief mode", async () => {
     vi.mocked(getFeedToken).mockReturnValue("tok-abc");
     const subscriberArticles = [makeArticle("s1")];
     vi.mocked(getSubscriberFeed).mockResolvedValue({
@@ -85,7 +89,7 @@ describe("useUserFeed", () => {
       articles: subscriberArticles,
     } as unknown as SubscriberFeed);
 
-    const { result } = renderHook(() => useUserFeed(null, true));
+    const { result } = renderHook(() => useUserFeed("brief", "", true));
 
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(getSubscriberFeed).toHaveBeenCalledWith("tok-abc");
@@ -99,7 +103,7 @@ describe("useUserFeed", () => {
     const fallback = [makeArticle("f1")];
     vi.mocked(getUserFeed).mockResolvedValue(fallback);
 
-    const { result } = renderHook(() => useUserFeed(null, true));
+    const { result } = renderHook(() => useUserFeed("brief", "", true));
 
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(clearFeedToken).toHaveBeenCalledTimes(1);
@@ -107,30 +111,45 @@ describe("useUserFeed", () => {
     expect(result.current.articles).toEqual(fallback);
   });
 
-  it("fetches by topic slugs when an active group resolves to one", async () => {
-    vi.mocked(findGroupByLabel).mockReturnValue({
-      label: "Macro",
-      slugs: ["macro", "fed"],
-    } as ReturnType<typeof findGroupByLabel>);
+  it("fetches general feed in explore mode when no chips are selected", async () => {
+    const general = [makeArticle("g1")];
+    vi.mocked(getGeneralFeed).mockResolvedValue(general);
+
+    const { result } = renderHook(() => useUserFeed("explore", "", true));
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(getGeneralFeed).toHaveBeenCalledWith(40);
+    expect(getUserFeed).not.toHaveBeenCalled();
+    expect(getSubscriberFeed).not.toHaveBeenCalled();
+    expect(result.current.articles).toEqual(general);
+  });
+
+  it("combines slugs from multiple selected groups in explore mode", async () => {
+    vi.mocked(findGroupByLabel).mockImplementation((label) => {
+      if (label === "Macro") return { label: "Macro", slugs: ["macro", "fed"] };
+      if (label === "Crypto") return { label: "Crypto", slugs: ["crypto"] };
+      return null;
+    });
     const byTopic = [makeArticle("t1")];
     vi.mocked(getArticlesByTopicSlugs).mockResolvedValue(byTopic);
 
-    const { result } = renderHook(() => useUserFeed("Macro", true));
+    const { result } = renderHook(() => useUserFeed("explore", "Crypto,Macro", true));
 
     await waitFor(() => expect(result.current.loading).toBe(false));
-    expect(getArticlesByTopicSlugs).toHaveBeenCalledWith(["macro", "fed"]);
+    expect(getArticlesByTopicSlugs).toHaveBeenCalledWith(["crypto", "macro", "fed"], 40);
     expect(getUserFeed).not.toHaveBeenCalled();
-    expect(getSubscriberFeed).not.toHaveBeenCalled();
+    expect(getGeneralFeed).not.toHaveBeenCalled();
     expect(result.current.articles).toEqual(byTopic);
   });
 
-  it("returns empty articles when the active group is unknown", async () => {
-    vi.mocked(findGroupByLabel).mockReturnValue(undefined);
+  it("returns empty articles when selected groups resolve to no slugs", async () => {
+    vi.mocked(findGroupByLabel).mockReturnValue(null);
 
-    const { result } = renderHook(() => useUserFeed("Bogus", true));
+    const { result } = renderHook(() => useUserFeed("explore", "Bogus", true));
 
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(getArticlesByTopicSlugs).not.toHaveBeenCalled();
+    expect(getGeneralFeed).not.toHaveBeenCalled();
     expect(result.current.articles).toEqual([]);
   });
 
@@ -138,7 +157,7 @@ describe("useUserFeed", () => {
     vi.mocked(getUserFeed).mockRejectedValue(new Error("network down"));
     const consoleErr = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    const { result } = renderHook(() => useUserFeed(null, true));
+    const { result } = renderHook(() => useUserFeed("brief", "", true));
 
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.error).toBe("network down");

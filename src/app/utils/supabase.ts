@@ -208,6 +208,40 @@ export async function getUserFeed(userId: string, limit: number = 20): Promise<A
     : allArticles;
 }
 
+// Fetch the display names of topics the user has selected as interests.
+// Used by FeedContextStrip to show "Curated from: Macro, Technology, ..."
+export async function getUserInterestTopicNames(userId: string): Promise<string[]> {
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/user_interests?user_id=eq.${userId}&select=topics(display_name)`,
+      { headers }
+    );
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data
+      .map((row: { topics: { display_name: string } | null }) => row.topics?.display_name)
+      .filter(Boolean) as string[];
+  } catch {
+    return [];
+  }
+}
+
+// Fetch the tickers the user is tracking.
+// Used by FeedContextStrip to show "Tracking: NVDA, AAPL, ..."
+export async function getUserTrackedTickers(userId: string): Promise<string[]> {
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/user_tickers?user_id=eq.${userId}&select=ticker`,
+      { headers }
+    );
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.map((row: { ticker: string }) => row.ticker);
+  } catch {
+    return [];
+  }
+}
+
 // Fetch topics that have at least one article in the last `sinceDays` days.
 // Used to populate the feed's topic tabs so every tab is guaranteed to resolve
 // to a real topic row AND to have recent content. Sorted by recent-article
