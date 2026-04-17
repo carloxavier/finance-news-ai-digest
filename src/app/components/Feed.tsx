@@ -4,14 +4,20 @@ import {
   getActiveTopics,
   formatArticleDate,
   getUserDigestEmail,
+  getUserInterestTopicNames,
+  getUserTrackedTickers,
+  getSubscriberFeed,
   type Article,
   type Topic,
 } from "../utils/supabase";
+import { resolveVisibleGroups, CHIP_KEY_SEPARATOR } from "../utils/topicGroups";
 import { getUserId, hasCompletedOnboarding, resetOnboarding, getFeedToken, clearFeedToken } from "../utils/userId";
 import { useUserFeed } from "../hooks/useUserFeed";
 import { TrendingUp, TrendingDown, Minus, AlertCircle, AlertTriangle } from "lucide-react";
 import { AppShell } from "./AppShell";
-import { TopicTabs } from "./TopicTabs";
+import { FeedModeToggle } from "./FeedModeToggle";
+import { FeedContextStrip } from "./FeedContextStrip";
+import { ExploreChips } from "./ExploreChips";
 import { WelcomeCard } from "./WelcomeCard";
 
 const SUPABASE_URL = "https://kamfamwjswkncftsdgxi.supabase.co";
@@ -22,12 +28,17 @@ export function Feed() {
   const navigate = useNavigate();
   const [dataIssue, setDataIssue] = useState(false);
   const [email, setEmail] = useState("");
-  const [activeGroup, setActiveGroup] = useState<string | null>(null);
+  const [feedMode, setFeedMode] = useState<"brief" | "explore">("brief");
+  const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set());
+  const [userTopicNames, setUserTopicNames] = useState<string[]>([]);
+  const [userTickers, setUserTickers] = useState<string[]>([]);
+  const [contextLoading, setContextLoading] = useState(true);
   const [topics, setTopics] = useState<Topic[]>([]);
   const [showWelcome, setShowWelcome] = useState(false);
   const onboarded = hasCompletedOnboarding();
 
-  const { articles, loading, firstLoadDone, error } = useUserFeed(activeGroup, onboarded);
+  const selectedChipKey = Array.from(selectedGroups).sort().join(CHIP_KEY_SEPARATOR);
+  const { articles, loading, firstLoadDone, error } = useUserFeed(feedMode, selectedChipKey, onboarded);
 
   // Mount-only: guards, email, and the welcome-card decision
   useEffect(() => {
@@ -45,11 +56,39 @@ export function Feed() {
       .then(setTopics)
       .catch((err) => console.warn("Failed to load active topics:", err));
 
+    // Fetch the user's topics + tickers for the "Your Brief" context strip.
+    // For email-link subscribers (feed_token present), the localStorage
+    // user_id may not match the subscriber's original user_id — querying
+    // user_interests by local user_id would be misleading. Use the subscriber
+    // feed instead, which resolves the actual subscriber row server-side.
+    const feedToken = getFeedToken();
+    if (feedToken) {
+      getSubscriberFeed(feedToken)
+        .then((feed) => {
+          if (feed) {
+            setUserTopicNames(feed.topics.map((t) => t.display_name));
+          }
+          // Subscriber feed does not expose tickers today.
+          setUserTickers([]);
+        })
+        .catch(() => {})
+        .finally(() => setContextLoading(false));
+    } else {
+      Promise.all([
+        getUserInterestTopicNames(getUserId()).catch(() => [] as string[]),
+        getUserTrackedTickers(getUserId()).catch(() => [] as string[]),
+      ])
+        .then(([names, tickers]) => {
+          setUserTopicNames(names);
+          setUserTickers(tickers);
+        })
+        .finally(() => setContextLoading(false));
+    }
+
     // Only prompt for topics on fresh signups. If a feed_token is present the
     // visitor arrived via an email link — they're an established subscriber,
     // and their localStorage user_id may not match the subscriber's original
     // user_id (cross-device), so the interests query would be misleading.
-    const feedToken = getFeedToken();
     if (!feedToken) {
       fetch(
         `${SUPABASE_URL}/rest/v1/user_interests?user_id=eq.${getUserId()}&select=id&limit=1`,
@@ -81,6 +120,18 @@ export function Feed() {
       resetOnboarding();
       navigate("/");
     }
+  };
+
+  const handleChipToggle = (label: string) => {
+    setSelectedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(label)) {
+        next.delete(label);
+      } else {
+        next.add(label);
+      }
+      return next;
+    });
   };
 
   const getSignalIcon = (signal: Article['consensus_signal']) => {
@@ -182,17 +233,30 @@ export function Feed() {
           }}
         />
       )}
-      <TopicTabs
-        activeTopics={topics}
-        activeGroup={activeGroup}
-        onGroupChange={setActiveGroup}
-      />
+      <FeedModeToggle mode={feedMode} onModeChange={setFeedMode} />
+
+      {feedMode === "brief" ? (
+        <FeedContextStrip
+          topicNames={userTopicNames}
+          tickers={userTickers}
+          onEdit={() => navigate("/onboarding?edit=true")}
+          loading={contextLoading}
+        />
+      ) : (
+        <ExploreChips
+          visibleGroups={resolveVisibleGroups(topics.map((t) => t.slug))}
+          selectedGroups={selectedGroups}
+          onToggle={handleChipToggle}
+        />
+      )}
 
       {loading ? (
         <div className="text-center py-12 text-white/40 text-sm">Loading…</div>
       ) : articles.length === 0 ? (
         <div className="text-center py-12 text-white/50">
-          No briefs found. Try adjusting your preferences.
+          {feedMode === "brief"
+            ? "Nothing matching your interests in the last 30 days. Try broadening your topics or check back tomorrow."
+            : "No articles found for the selected topics."}
         </div>
       ) : (
         <div className="space-y-4">
@@ -204,10 +268,14 @@ export function Feed() {
               >
                 {/* Header: Publication & Time */}
                 <div className="flex items-center gap-3 mb-3">
-                  <span className="text-xs text-white/50 uppercase tracking-wider" style={{ fontFamily: 'var(--font-mono)' }}>
-                    {article.publication}
-                  </span>
-                  <span className="text-xs text-white/30">•</span>
+                  {article.publication && (
+                    <>
+                      <span className="text-xs text-white/50 uppercase tracking-wider" style={{ fontFamily: 'var(--font-mono)' }}>
+                        {article.publication}
+                      </span>
+                      <span className="text-xs text-white/30">•</span>
+                    </>
+                  )}
                   <span className="text-xs text-white/40">
                     {formatArticleDate(article.published_at)}
                   </span>

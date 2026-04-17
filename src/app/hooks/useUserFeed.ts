@@ -3,9 +3,10 @@ import {
   getUserFeed,
   getSubscriberFeed,
   getArticlesByTopicSlugs,
+  getGeneralFeed,
   type Article,
 } from "../utils/supabase";
-import { findGroupByLabel } from "../utils/topicGroups";
+import { findGroupByLabel, CHIP_KEY_SEPARATOR } from "../utils/topicGroups";
 import { getUserId, getFeedToken, clearFeedToken } from "../utils/userId";
 
 interface UseUserFeedResult {
@@ -19,15 +20,23 @@ interface UseUserFeedResult {
  * Resolve and fetch the authenticated user's feed.
  *
  * Branches on:
- *   1. An active topic group  → fetch articles by that group's slugs.
- *   2. An email-link feed_token → fetch the subscriber's personalised feed.
- *   3. Otherwise                → fetch by persisted user id.
+ *   - mode === "brief":
+ *       - feed_token present → subscriber personalised feed
+ *       - otherwise          → user feed by persisted user id
+ *   - mode === "explore":
+ *       - empty chip key     → general (unfiltered) feed
+ *       - chip labels set    → articles across the union of the selected groups' slugs
  *
- * Tracks `firstLoadDone` separately from `loading` so callers can show a
- * one-time full-screen spinner on mount and an inline loader for later
- * tab changes (keeping navigation visible).
+ * `selectedChipKey` is a CHIP_KEY_SEPARATOR-joined sorted string of selected
+ * group labels (e.g. "Crypto\u001FMacro" or ""). Using a string dep avoids
+ * stale-array reference issues in the effect. The separator is deliberately
+ * an unprintable character so labels may safely contain commas/pipes/etc.
  */
-export function useUserFeed(activeGroup: string | null, enabled: boolean): UseUserFeedResult {
+export function useUserFeed(
+  mode: "brief" | "explore",
+  selectedChipKey: string,
+  enabled: boolean,
+): UseUserFeedResult {
   const [articles, setArticles] = useState<Article[]>([]);
   const [loading, setLoading] = useState(true);
   const [firstLoadDone, setFirstLoadDone] = useState(false);
@@ -43,10 +52,8 @@ export function useUserFeed(activeGroup: string | null, enabled: boolean): UseUs
     const load = async () => {
       try {
         let fetched: Article[];
-        if (activeGroup !== null) {
-          const group = findGroupByLabel(activeGroup);
-          fetched = group ? await getArticlesByTopicSlugs(group.slugs) : [];
-        } else {
+
+        if (mode === "brief") {
           const feedToken = getFeedToken();
           if (feedToken) {
             const feed = await getSubscriberFeed(feedToken);
@@ -59,7 +66,23 @@ export function useUserFeed(activeGroup: string | null, enabled: boolean): UseUs
           } else {
             fetched = await getUserFeed(getUserId());
           }
+        } else {
+          const selectedGroupLabels = selectedChipKey
+            ? selectedChipKey.split(CHIP_KEY_SEPARATOR)
+            : [];
+          if (selectedGroupLabels.length === 0) {
+            fetched = await getGeneralFeed(40);
+          } else {
+            const allSlugs = selectedGroupLabels.flatMap((label) => {
+              const group = findGroupByLabel(label);
+              return group ? group.slugs : [];
+            });
+            fetched = allSlugs.length > 0
+              ? await getArticlesByTopicSlugs(allSlugs, 40)
+              : [];
+          }
         }
+
         if (cancelled) return;
         setArticles(fetched);
       } catch (err) {
@@ -77,7 +100,7 @@ export function useUserFeed(activeGroup: string | null, enabled: boolean): UseUs
     return () => {
       cancelled = true;
     };
-  }, [activeGroup, enabled]);
+  }, [mode, selectedChipKey, enabled]);
 
   return { articles, loading, firstLoadDone, error };
 }

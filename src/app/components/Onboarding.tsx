@@ -80,7 +80,11 @@ export function Onboarding() {
       return;
     }
 
-    if (hasCompletedOnboarding()) {
+    // `?edit=true` is the edit-interests re-entry flow (e.g. from the Feed's
+    // context-strip "Edit →" link). Already-onboarded users are allowed to
+    // revisit the flow to update topics/tickers without being bounced back.
+    const isEditing = searchParams.get("edit") === "true";
+    if (hasCompletedOnboarding() && !isEditing) {
       navigate("/feed");
       return;
     }
