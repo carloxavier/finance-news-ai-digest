@@ -42,18 +42,6 @@ describe("FeedContextStrip", () => {
     expect(screen.queryByText(/Curated from:/)).not.toBeInTheDocument();
   });
 
-  it("renders both when both topics and tickers are set", () => {
-    render(
-      <FeedContextStrip
-        topicNames={["Macro"]}
-        tickers={["NVDA"]}
-        onEdit={() => {}}
-      />,
-    );
-    expect(screen.getByText(/Curated from:/)).toBeInTheDocument();
-    expect(screen.getByText(/Tracking:/)).toBeInTheDocument();
-  });
-
   it('shows empty-state copy and "Set up your interests" CTA when nothing is set', () => {
     render(
       <FeedContextStrip

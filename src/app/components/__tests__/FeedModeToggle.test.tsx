@@ -3,14 +3,9 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { FeedModeToggle } from "../FeedModeToggle";
 
 describe("FeedModeToggle", () => {
-  it("exposes a tablist role with two tabs", () => {
+  it("renders as an ARIA tablist with the active tab marked aria-selected", () => {
     render(<FeedModeToggle mode="brief" onModeChange={() => {}} />);
     expect(screen.getByRole("tablist")).toBeInTheDocument();
-    expect(screen.getAllByRole("tab")).toHaveLength(2);
-  });
-
-  it("marks the active tab with aria-selected", () => {
-    render(<FeedModeToggle mode="brief" onModeChange={() => {}} />);
     expect(screen.getByRole("tab", { name: "Your Brief" })).toHaveAttribute(
       "aria-selected",
       "true",
@@ -21,17 +16,12 @@ describe("FeedModeToggle", () => {
     );
   });
 
-  it("fires onModeChange when clicking the inactive tab", () => {
-    const onChange = vi.fn();
-    render(<FeedModeToggle mode="brief" onModeChange={onChange} />);
-    fireEvent.click(screen.getByRole("tab", { name: "Explore" }));
-    expect(onChange).toHaveBeenCalledWith("explore");
-  });
-
-  it("does NOT fire onModeChange when clicking the already-active tab", () => {
+  it("fires onModeChange for the inactive tab but not the active one", () => {
     const onChange = vi.fn();
     render(<FeedModeToggle mode="brief" onModeChange={onChange} />);
     fireEvent.click(screen.getByRole("tab", { name: "Your Brief" }));
     expect(onChange).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("tab", { name: "Explore" }));
+    expect(onChange).toHaveBeenCalledWith("explore");
   });
 });

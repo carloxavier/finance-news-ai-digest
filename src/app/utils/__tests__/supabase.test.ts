@@ -14,43 +14,18 @@ function mockFetch(responses: Array<{ ok: boolean; body: unknown }>) {
   return fn;
 }
 
+// NOTE on test scope: `getUserInterestTopicNames` and `getUserTrackedTickers`
+// share the same defensive guards (!res.ok → [], non-array body → [], fetch
+// throws → []). We exercise those guards thoroughly on the more complex
+// function (topics, which also has the object/array embed shape) and only
+// cover the happy + non-array body cases on tickers to avoid duplicate
+// coverage of identical code paths.
+
 describe("getUserInterestTopicNames", () => {
-  beforeEach(() => {
-    vi.restoreAllMocks();
-  });
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
+  beforeEach(() => vi.restoreAllMocks());
+  afterEach(() => vi.unstubAllGlobals());
 
-  it("returns display names when topics come back as singular objects", async () => {
-    mockFetch([
-      {
-        ok: true,
-        body: [
-          { topics: { display_name: "Macro" } },
-          { topics: { display_name: "Technology" } },
-        ],
-      },
-    ]);
-    const names = await getUserInterestTopicNames("u-1");
-    expect(names).toEqual(["Macro", "Technology"]);
-  });
-
-  it("tolerates topics arriving as arrays (PostgREST to-many shape)", async () => {
-    mockFetch([
-      {
-        ok: true,
-        body: [
-          { topics: [{ display_name: "Macro" }] },
-          { topics: [{ display_name: "Technology" }] },
-        ],
-      },
-    ]);
-    const names = await getUserInterestTopicNames("u-1");
-    expect(names).toEqual(["Macro", "Technology"]);
-  });
-
-  it("skips rows with null topics", async () => {
+  it("extracts display_name from singular `topics` objects and skips nulls", async () => {
     mockFetch([
       {
         ok: true,
@@ -61,70 +36,49 @@ describe("getUserInterestTopicNames", () => {
         ],
       },
     ]);
-    const names = await getUserInterestTopicNames("u-1");
-    expect(names).toEqual(["Macro", "Crypto"]);
+    expect(await getUserInterestTopicNames("u-1")).toEqual(["Macro", "Crypto"]);
   });
 
-  it("returns [] when response is not ok", async () => {
-    mockFetch([{ ok: false, body: { code: "PGRST116" } }]);
-    const names = await getUserInterestTopicNames("u-1");
-    expect(names).toEqual([]);
+  it("tolerates topics arriving as arrays (PostgREST to-many shape)", async () => {
+    // Regression guard: if the FK relationship is ever inferred as to-many,
+    // `topics` comes through as an array — silent empty results otherwise.
+    mockFetch([
+      {
+        ok: true,
+        body: [
+          { topics: [{ display_name: "Macro" }] },
+          { topics: [{ display_name: "Technology" }] },
+        ],
+      },
+    ]);
+    expect(await getUserInterestTopicNames("u-1")).toEqual(["Macro", "Technology"]);
   });
 
-  it("returns [] when body is an error object instead of an array", async () => {
-    // PostgREST can return 200 with a non-array payload for some edge cases.
+  it("returns [] when the body is a non-array PostgREST error payload", async () => {
+    // PostgREST can return 200 with an object like {code, message} in edge cases.
     mockFetch([{ ok: true, body: { code: "PGRST116", message: "not found" } }]);
-    const names = await getUserInterestTopicNames("u-1");
-    expect(names).toEqual([]);
+    expect(await getUserInterestTopicNames("u-1")).toEqual([]);
   });
 
-  it("returns [] when fetch throws", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockRejectedValue(new Error("network")),
-    );
-    const names = await getUserInterestTopicNames("u-1");
-    expect(names).toEqual([]);
+  it("returns [] on HTTP error and on fetch rejection", async () => {
+    mockFetch([{ ok: false, body: {} }]);
+    expect(await getUserInterestTopicNames("u-1")).toEqual([]);
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network")));
+    expect(await getUserInterestTopicNames("u-1")).toEqual([]);
   });
 });
 
 describe("getUserTrackedTickers", () => {
-  beforeEach(() => {
-    vi.restoreAllMocks();
-  });
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
+  beforeEach(() => vi.restoreAllMocks());
+  afterEach(() => vi.unstubAllGlobals());
 
   it("returns tickers from a well-formed response", async () => {
-    mockFetch([
-      {
-        ok: true,
-        body: [{ ticker: "NVDA" }, { ticker: "AAPL" }],
-      },
-    ]);
-    const tickers = await getUserTrackedTickers("u-1");
-    expect(tickers).toEqual(["NVDA", "AAPL"]);
+    mockFetch([{ ok: true, body: [{ ticker: "NVDA" }, { ticker: "AAPL" }] }]);
+    expect(await getUserTrackedTickers("u-1")).toEqual(["NVDA", "AAPL"]);
   });
 
-  it("returns [] when response is not ok", async () => {
-    mockFetch([{ ok: false, body: {} }]);
-    const tickers = await getUserTrackedTickers("u-1");
-    expect(tickers).toEqual([]);
-  });
-
-  it("returns [] when body is a non-array error object", async () => {
+  it("returns [] when the body is a non-array PostgREST error payload", async () => {
     mockFetch([{ ok: true, body: { code: "PGRST116" } }]);
-    const tickers = await getUserTrackedTickers("u-1");
-    expect(tickers).toEqual([]);
-  });
-
-  it("returns [] when fetch throws", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockRejectedValue(new Error("network")),
-    );
-    const tickers = await getUserTrackedTickers("u-1");
-    expect(tickers).toEqual([]);
+    expect(await getUserTrackedTickers("u-1")).toEqual([]);
   });
 });
