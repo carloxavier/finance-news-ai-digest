@@ -6,7 +6,7 @@ import {
   getGeneralFeed,
   type Article,
 } from "../utils/supabase";
-import { findGroupByLabel } from "../utils/topicGroups";
+import { findGroupByLabel, CHIP_KEY_SEPARATOR } from "../utils/topicGroups";
 import { getUserId, getFeedToken, clearFeedToken } from "../utils/userId";
 
 interface UseUserFeedResult {
@@ -27,9 +27,10 @@ interface UseUserFeedResult {
  *       - empty chip key     → general (unfiltered) feed
  *       - chip labels set    → articles across the union of the selected groups' slugs
  *
- * `selectedChipKey` is a comma-joined sorted string of selected group labels
- * (e.g. "Crypto,Macro" or ""). Using a string dep avoids stale-array reference
- * issues in the effect.
+ * `selectedChipKey` is a CHIP_KEY_SEPARATOR-joined sorted string of selected
+ * group labels (e.g. "Crypto\u001FMacro" or ""). Using a string dep avoids
+ * stale-array reference issues in the effect. The separator is deliberately
+ * an unprintable character so labels may safely contain commas/pipes/etc.
  */
 export function useUserFeed(
   mode: "brief" | "explore",
@@ -66,7 +67,9 @@ export function useUserFeed(
             fetched = await getUserFeed(getUserId());
           }
         } else {
-          const selectedGroupLabels = selectedChipKey ? selectedChipKey.split(",") : [];
+          const selectedGroupLabels = selectedChipKey
+            ? selectedChipKey.split(CHIP_KEY_SEPARATOR)
+            : [];
           if (selectedGroupLabels.length === 0) {
             fetched = await getGeneralFeed(40);
           } else {

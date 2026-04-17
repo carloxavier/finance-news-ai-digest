@@ -210,6 +210,14 @@ export async function getUserFeed(userId: string, limit: number = 20): Promise<A
 
 // Fetch the display names of topics the user has selected as interests.
 // Used by FeedContextStrip to show "Curated from: Macro, Technology, ..."
+//
+// Defensively handles two PostgREST shapes for the embedded `topics` resource:
+//   - singular object: `{ topics: { display_name } }` (many-to-one, the
+//     normal case for user_interests.topic_id → topics.id)
+//   - array: `{ topics: [{ display_name }] }` (if PostgREST ever infers the
+//     relationship as to-many due to a schema change)
+// Also returns [] when the body isn't an array (e.g. PostgREST error payload
+// served with a 200 status).
 export async function getUserInterestTopicNames(userId: string): Promise<string[]> {
   try {
     const res = await fetch(
@@ -218,9 +226,20 @@ export async function getUserInterestTopicNames(userId: string): Promise<string[
     );
     if (!res.ok) return [];
     const data = await res.json();
-    return data
-      .map((row: { topics: { display_name: string } | null }) => row.topics?.display_name)
-      .filter(Boolean) as string[];
+    if (!Array.isArray(data)) return [];
+    const out: string[] = [];
+    for (const row of data as Array<{
+      topics: { display_name?: string } | Array<{ display_name?: string }> | null;
+    }>) {
+      const t = row.topics;
+      if (!t) continue;
+      if (Array.isArray(t)) {
+        for (const x of t) if (x?.display_name) out.push(x.display_name);
+      } else if (t.display_name) {
+        out.push(t.display_name);
+      }
+    }
+    return out;
   } catch {
     return [];
   }
@@ -236,7 +255,10 @@ export async function getUserTrackedTickers(userId: string): Promise<string[]> {
     );
     if (!res.ok) return [];
     const data = await res.json();
-    return data.map((row: { ticker: string }) => row.ticker);
+    if (!Array.isArray(data)) return [];
+    return data
+      .map((row: { ticker?: string }) => row.ticker)
+      .filter((t): t is string => typeof t === "string" && t.length > 0);
   } catch {
     return [];
   }

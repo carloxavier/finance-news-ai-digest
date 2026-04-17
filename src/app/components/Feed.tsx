@@ -6,10 +6,11 @@ import {
   getUserDigestEmail,
   getUserInterestTopicNames,
   getUserTrackedTickers,
+  getSubscriberFeed,
   type Article,
   type Topic,
 } from "../utils/supabase";
-import { resolveVisibleGroups } from "../utils/topicGroups";
+import { resolveVisibleGroups, CHIP_KEY_SEPARATOR } from "../utils/topicGroups";
 import { getUserId, hasCompletedOnboarding, resetOnboarding, getFeedToken, clearFeedToken } from "../utils/userId";
 import { useUserFeed } from "../hooks/useUserFeed";
 import { TrendingUp, TrendingDown, Minus, AlertCircle, AlertTriangle } from "lucide-react";
@@ -36,7 +37,7 @@ export function Feed() {
   const [showWelcome, setShowWelcome] = useState(false);
   const onboarded = hasCompletedOnboarding();
 
-  const selectedChipKey = Array.from(selectedGroups).sort().join(",");
+  const selectedChipKey = Array.from(selectedGroups).sort().join(CHIP_KEY_SEPARATOR);
   const { articles, loading, firstLoadDone, error } = useUserFeed(feedMode, selectedChipKey, onboarded);
 
   // Mount-only: guards, email, and the welcome-card decision
@@ -56,21 +57,38 @@ export function Feed() {
       .catch((err) => console.warn("Failed to load active topics:", err));
 
     // Fetch the user's topics + tickers for the "Your Brief" context strip.
-    Promise.all([
-      getUserInterestTopicNames(getUserId()).catch(() => [] as string[]),
-      getUserTrackedTickers(getUserId()).catch(() => [] as string[]),
-    ])
-      .then(([names, tickers]) => {
-        setUserTopicNames(names);
-        setUserTickers(tickers);
-      })
-      .finally(() => setContextLoading(false));
+    // For email-link subscribers (feed_token present), the localStorage
+    // user_id may not match the subscriber's original user_id — querying
+    // user_interests by local user_id would be misleading. Use the subscriber
+    // feed instead, which resolves the actual subscriber row server-side.
+    const feedToken = getFeedToken();
+    if (feedToken) {
+      getSubscriberFeed(feedToken)
+        .then((feed) => {
+          if (feed) {
+            setUserTopicNames(feed.topics.map((t) => t.display_name));
+          }
+          // Subscriber feed does not expose tickers today.
+          setUserTickers([]);
+        })
+        .catch(() => {})
+        .finally(() => setContextLoading(false));
+    } else {
+      Promise.all([
+        getUserInterestTopicNames(getUserId()).catch(() => [] as string[]),
+        getUserTrackedTickers(getUserId()).catch(() => [] as string[]),
+      ])
+        .then(([names, tickers]) => {
+          setUserTopicNames(names);
+          setUserTickers(tickers);
+        })
+        .finally(() => setContextLoading(false));
+    }
 
     // Only prompt for topics on fresh signups. If a feed_token is present the
     // visitor arrived via an email link — they're an established subscriber,
     // and their localStorage user_id may not match the subscriber's original
     // user_id (cross-device), so the interests query would be misleading.
-    const feedToken = getFeedToken();
     if (!feedToken) {
       fetch(
         `${SUPABASE_URL}/rest/v1/user_interests?user_id=eq.${getUserId()}&select=id&limit=1`,
@@ -221,7 +239,7 @@ export function Feed() {
         <FeedContextStrip
           topicNames={userTopicNames}
           tickers={userTickers}
-          onEdit={() => navigate("/onboarding")}
+          onEdit={() => navigate("/onboarding?edit=true")}
           loading={contextLoading}
         />
       ) : (

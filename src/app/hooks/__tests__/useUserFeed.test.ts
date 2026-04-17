@@ -21,9 +21,15 @@ vi.mock("../../utils/userId", () => ({
   clearFeedToken: vi.fn(),
 }));
 
-vi.mock("../../utils/topicGroups", () => ({
-  findGroupByLabel: vi.fn(),
-}));
+vi.mock("../../utils/topicGroups", async () => {
+  const actual = await vi.importActual<typeof import("../../utils/topicGroups")>(
+    "../../utils/topicGroups",
+  );
+  return {
+    ...actual,
+    findGroupByLabel: vi.fn(),
+  };
+});
 
 import {
   getUserFeed,
@@ -32,7 +38,7 @@ import {
   getGeneralFeed,
 } from "../../utils/supabase";
 import { getUserId, getFeedToken, clearFeedToken } from "../../utils/userId";
-import { findGroupByLabel } from "../../utils/topicGroups";
+import { findGroupByLabel, CHIP_KEY_SEPARATOR } from "../../utils/topicGroups";
 import { useUserFeed } from "../useUserFeed";
 
 function makeArticle(id: string): Article {
@@ -133,13 +139,33 @@ describe("useUserFeed", () => {
     const byTopic = [makeArticle("t1")];
     vi.mocked(getArticlesByTopicSlugs).mockResolvedValue(byTopic);
 
-    const { result } = renderHook(() => useUserFeed("explore", "Crypto,Macro", true));
+    const chipKey = ["Crypto", "Macro"].join(CHIP_KEY_SEPARATOR);
+    const { result } = renderHook(() => useUserFeed("explore", chipKey, true));
 
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(getArticlesByTopicSlugs).toHaveBeenCalledWith(["crypto", "macro", "fed"], 40);
     expect(getUserFeed).not.toHaveBeenCalled();
     expect(getGeneralFeed).not.toHaveBeenCalled();
     expect(result.current.articles).toEqual(byTopic);
+  });
+
+  it("treats a comma inside a label as part of the label (does not split)", async () => {
+    // Regression: a label with a comma must not corrupt chip resolution.
+    vi.mocked(findGroupByLabel).mockImplementation((label) => {
+      if (label === "Commodities, Futures") {
+        return { label: "Commodities, Futures", slugs: ["commodities"] };
+      }
+      return null;
+    });
+    vi.mocked(getArticlesByTopicSlugs).mockResolvedValue([makeArticle("c1")]);
+
+    const { result } = renderHook(() =>
+      useUserFeed("explore", "Commodities, Futures", true),
+    );
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(findGroupByLabel).toHaveBeenCalledWith("Commodities, Futures");
+    expect(getArticlesByTopicSlugs).toHaveBeenCalledWith(["commodities"], 40);
   });
 
   it("returns empty articles when selected groups resolve to no slugs", async () => {

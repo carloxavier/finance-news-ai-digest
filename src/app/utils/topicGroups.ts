@@ -14,6 +14,16 @@ export interface TopicGroup {
   slugs: string[];
 }
 
+// Separator used to encode a Set<label> as a stable string for effect
+// dependencies (see useUserFeed). Must be a character that cannot appear in
+// any TopicGroup label. We use U+001F (Unit Separator), an unprintable ASCII
+// control character that no human would ever type into a label.
+//
+// DO NOT change this to ',' or '|' — labels like "Commodities, Futures" or
+// "Crypto | DeFi" would silently corrupt chip selection state.
+// The `topicGroups.test.ts` guard will fail if any label contains this char.
+export const CHIP_KEY_SEPARATOR = "\u001F";
+
 export const TOPIC_GROUPS: TopicGroup[] = [
   {
     label: "Tech & AI",
