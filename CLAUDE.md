@@ -3,11 +3,29 @@
 Read this first. It tells you where everything lives so you don't need to
 rediscover it each session.
 
+## Before you start any non-trivial work
+
+**Always `git fetch` first.** `main` moves independently of any branch you
+think you're on — PRs get merged, squashes change SHAs, and working from a
+stale base wastes time on commits that will need to be cherry-picked or
+rebased later. At minimum:
+
+```
+git fetch origin
+git log HEAD..origin/main --oneline     # anything new on main?
+git status                              # clean working tree?
+```
+
+Do this at the start of every session that touches code, and again before
+any commit/push/PR. If `origin/main` has new commits you don't have, decide
+up front how to integrate (rebase, merge, or cherry-pick onto a fresh
+branch) rather than discovering it at push time.
+
 ## Project
 
-Finance AI Digest — a Vite + React + TypeScript frontend (GitHub Pages) plus
-Supabase backend (Postgres, Edge Functions, pg_cron) and Resend for email.
-Supabase project ID: `kamfamwjswkncftsdgxi`.
+Finance AI Digest — a Vite + React + TypeScript frontend served from
+`finnopolis.com`, Supabase backend (Postgres, Edge Functions, pg_cron),
+Resend for transactional email. Supabase project ID: `kamfamwjswkncftsdgxi`.
 
 ## Code layout
 
