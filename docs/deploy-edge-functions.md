@@ -8,7 +8,7 @@ All functions use `verify_jwt=false` (they are public endpoints used in email li
 
 **Supabase Project ID:** `kamfamwjswkncftsdgxi`
 
-**App Base URL:** `https://carloxavier.github.io/finance-news-ai-digest`
+**App Base URL:** `https://finnopolis.com`
 
 ---
 
@@ -32,7 +32,7 @@ All functions use `verify_jwt=false` (they are public endpoints used in email li
 
 **File:** `supabase/functions/send-digest/index.ts`
 
-**Purpose:** Sends personalized email digests. Triggered by pg_cron daily at 07:00 UTC, or manually via POST with `{"email": "user@example.com"}`.
+**Purpose:** Sends personalized email digests. Triggered by pg_cron hourly (each run calls `get_digest_recipients(target_hour)` and only sends to subscribers whose local delivery time matches the current UTC hour). Can also be triggered manually via POST with `{"email": "user@example.com"}` (targets one subscriber regardless of timezone) or `{"target_hour": 7}` (overrides the hour used to pick recipients). See [architecture.md](./architecture.md#digest-delivery-cadence).
 
 **Required secret:** `RESEND_API_KEY`
 
@@ -97,8 +97,10 @@ curl -X POST 'https://kamfamwjswkncftsdgxi.supabase.co/functions/v1/send-digest'
 
 **Expected response:**
 ```json
-{ "sent": 1, "failed": 0, "total": 1, "errors": [] }
+{ "sent": 1, "failed": 0, "skipped": 0, "errors": [], "message": "..." }
 ```
+
+`skipped` counts subscribers picked up by the recipient query but rejected during per-subscriber checks (e.g. `last_sent_at` within the same day). `message` is a human-readable summary used by manual invocations.
 
 **Validation checklist:**
 1. Email received with 8 articles matching the web feed
@@ -116,5 +118,5 @@ curl -X POST 'https://kamfamwjswkncftsdgxi.supabase.co/functions/v1/send-digest'
 | `ignoreDuplicates: true` on upsert | Re-sent digest has new click tokens but DB keeps old ones → track-click can't find token → fallback redirect | Always use `ignoreDuplicates: false` |
 | Missing `?t=feed_token` in redirect | User lands on app with no session → sees onboarding | track-click must join digest_subscribers to get feed_token |
 | Using `get_user_feed` for digest | Different ranking + stale cache → email articles don't match web | Always use `get_subscriber_feed` for digest |
-| Hardcoded `finnopolis.com` base URL | Redirects to wrong domain | Use `https://carloxavier.github.io/finance-news-ai-digest` everywhere |
+| Drifted `SITE_BASE_URL` between functions | `send-digest`, `send-welcome`, and `track-click` each hardcode the base URL; if one is updated and the others aren't, links break across surfaces | Keep the three `SITE_BASE_URL`/`FALLBACK_URL` constants aligned, or promote the value to a Supabase secret |
 | `DISTINCT ON` with wrong `ORDER BY` | `LIMIT` applied before date sort → misses newest articles | Deduplicate with subquery, then sort by date, then limit |

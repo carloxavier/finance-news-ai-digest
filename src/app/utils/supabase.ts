@@ -54,12 +54,13 @@ export interface AnalystData {
 }
 
 export interface ArticleDetail extends Article {
-  brief: string;
-  citations: Citation[];
-  analyst_data: Record<string, AnalystData>;
-  inference_watch: string[];
-  inference_risks: string[];
-  inference_questions: string[];
+  brief_bullets: string[] | null;
+  brief: string | null;
+  citations: Citation[] | null;
+  analyst_data: Record<string, AnalystData> | null;
+  inference_watch: string[] | null;
+  inference_risks: string[] | null;
+  inference_questions: string[] | null;
 }
 
 export async function getTopics(): Promise<Topic[]> {
