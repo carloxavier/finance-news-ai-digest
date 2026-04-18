@@ -13,7 +13,6 @@ import {
   DialogFooter,
 } from "./ui/dialog";
 import { getUserId, setFeedToken, setOnboardingComplete } from "../utils/userId";
-import { splitBriefIntoPoints } from "../utils/splitBrief";
 
 export function ArticleDetail() {
   const { id } = useParams<{ id: string }>();
@@ -161,16 +160,22 @@ export function ArticleDetail() {
           <h2 className="text-sm uppercase tracking-wider text-white/50 mb-4" style={{ fontFamily: 'var(--font-mono)' }}>
             AI Brief
           </h2>
-          <ul className="space-y-3">
-            {splitBriefIntoPoints(article.brief).map((point, index) => (
-              <li key={index} className="flex gap-3">
-                <span className="text-[var(--citation-blue)] flex-shrink-0 mt-1">•</span>
-                <span className="text-white/90 leading-relaxed">
-                  {renderBrief(point)}
-                </span>
-              </li>
-            ))}
-          </ul>
+          {article.brief_bullets && article.brief_bullets.length > 0 ? (
+            <ul className="space-y-3">
+              {article.brief_bullets.map((point, index) => (
+                <li key={index} className="flex gap-3">
+                  <span className="text-[var(--citation-blue)] flex-shrink-0 mt-1">•</span>
+                  <span className="text-white/90 leading-relaxed">
+                    {renderBrief(point)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : article.brief ? (
+            <p className="text-white/90 leading-relaxed whitespace-pre-wrap">
+              {renderBrief(article.brief)}
+            </p>
+          ) : null}
 
           {/* Citations */}
           {article.citations && article.citations.length > 0 && (
