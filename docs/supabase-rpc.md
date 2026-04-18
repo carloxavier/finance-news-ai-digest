@@ -121,57 +121,18 @@ GET /rest/v1/ai_articles?id=in.(id1,id2,...)&select=id,headline,publication,...
 
 ## Database Tables Referenced
 
-### ai_articles
+Table schemas live in [`docs/data-model/`](./data-model/README.md) — that is the single source of truth for columns, types, nullability, and FK cascade rules. Do not duplicate schema details in this file; keep it focused on RPC call/response shapes. Relevant tables for the RPCs above:
 
-| Column | Type | Nullable | Notes |
-|--------|------|----------|-------|
-| `id` | uuid | no | Primary key |
-| `headline` | text | no | Article title |
-| `publication` | text | no | Source name (e.g. "CNBC") |
-| `published_at` | timestamptz | no | All complete articles have valid timestamps |
-| `ai_preview` | text | no | One-line AI summary |
-| `consensus_signal` | text | no | BUY, SELL, MIXED, or NO_RATING |
-| `extracted_tickers` | text[] | yes | Can be null or empty array |
-| `source_url` | text | no | Original article URL |
-| `brief` | text | no | Full AI brief (detail view only) |
-| `citations` | jsonb | no | Array of citation objects |
-| `analyst_data` | jsonb | yes | Per-ticker Finnhub data |
-| `inference_watch` | text[] | yes | "What to watch" bullets |
-| `inference_risks` | text[] | yes | "Key risks" bullets |
-| `inference_questions` | text[] | yes | "Open questions" bullets |
-| `finnhub_fetched_at` | timestamptz | yes | NULL on ~60% of articles (by design) |
-| `processing_status` | text | no | "complete", "pending", etc. |
+| Table | Doc |
+|---|---|
+| `ai_articles` | [`data-model/content-tables.md`](./data-model/content-tables.md) |
+| `digest_subscribers`, `user_interests`, `user_tickers`, `user_feed_cache` | [`data-model/user-tables.md`](./data-model/user-tables.md) |
+| `digest_sent_articles`, `article_clicks` | [`data-model/engagement-tables.md`](./data-model/engagement-tables.md) |
+| `topics`, `article_topics` | [`data-model/content-tables.md`](./data-model/content-tables.md) |
 
-### digest_subscribers
+Key invariants that live in the data-model docs but are load-bearing for the RPC contract:
 
-| Column | Type | Nullable | Notes |
-|--------|------|----------|-------|
-| `id` | uuid | no | Primary key |
-| `user_id` | uuid | no | References anonymous user UUID |
-| `email` | text | no | Unique |
-| `frequency` | text | no | "daily" or "weekly" |
-| `feed_token` | text | yes | Stateless session token for email links |
-| `unsubscribe_token` | text | yes | Token for one-click unsubscribe |
-| `is_active` | boolean | no | Unsubscribe sets to false |
-| `last_sent_at` | timestamptz | yes | NULL until first digest sent |
-
-### digest_sent_articles
-
-| Column | Type | Nullable | Notes |
-|--------|------|----------|-------|
-| `id` | serial | no | Primary key |
-| `subscriber_id` | uuid | no | FK to digest_subscribers |
-| `article_id` | uuid | no | FK to ai_articles |
-| `click_token` | text | no | Unique token embedded in email link |
-| `digest_batch` | text | no | Batch ID (e.g. "digest-20260407-0700") |
-
-**Unique constraint:** `(subscriber_id, article_id)` — upsert must use `ignoreDuplicates: false` to update click_token on re-send.
-
-### article_clicks
-
-| Column | Type | Nullable | Notes |
-|--------|------|----------|-------|
-| `subscriber_id` | uuid | no | FK to digest_subscribers |
-| `article_id` | uuid | no | FK to ai_articles |
-| `sent_article_id` | int | no | FK to digest_sent_articles |
-| `source` | text | no | "email" |
+- `ai_articles.processing_status = 'complete'` is the only status visible to feed RPCs and email queries. See [`article-lifecycle.md`](./data-model/article-lifecycle.md).
+- `digest_subscribers.feed_token` is NOT NULL (defaulted at INSERT) — every subscriber has one, so distinguishing subscriber types by `feed_token` nullability is wrong. Use `user_interests` existence instead.
+- `digest_sent_articles` has a unique constraint on `(subscriber_id, article_id)` — upsert must use `ignoreDuplicates: false` so a re-send updates the click_token.
+- Several `ai_articles` columns are nullable (`publication`, `source_url`, `brief`, `ai_preview`, `extracted_tickers`, `inference_*`, `analyst_data`). Always null-guard in renderers and email templates.

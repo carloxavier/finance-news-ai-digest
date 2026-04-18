@@ -1,11 +1,24 @@
+# Financial News Feed App
 
-  # Financial News Feed App
+Vite + React + TypeScript frontend backed by Supabase (Postgres, Edge
+Functions, pg_cron) and Resend for email delivery. The original Figma
+design lives at
+https://www.figma.com/design/5GrMkeIq9GvsiJn29xhiY2/Financial-News-Feed-App.
 
-  This is a code bundle for Financial News Feed App. The original project is available at https://www.figma.com/design/5GrMkeIq9GvsiJn29xhiY2/Financial-News-Feed-App.
+## Running the code
 
-  ## Running the code
+```
+npm i
+npm run dev      # dev server
+npm test         # Vitest
+```
 
-  Run `npm i` to install the dependencies.
+## Documentation
 
-  Run `npm run dev` to start the development server.
-  
+- [`CLAUDE.md`](./CLAUDE.md) — repo orientation for Claude Code / new contributors
+- [`guidelines/Guidelines.md`](./guidelines/Guidelines.md) — project rules, invariants, test matrix, design system
+- [`docs/architecture.md`](./docs/architecture.md) — system diagram, email-to-app flow
+- [`docs/supabase-rpc.md`](./docs/supabase-rpc.md) — RPC response shapes
+- [`docs/deploy-edge-functions.md`](./docs/deploy-edge-functions.md) — Edge Function deployment
+- [`docs/data-model/`](./docs/data-model/README.md) — database schema: tables, enums, FK cascade rules
+- [`docs/backlog/`](./docs/backlog/README.md) — deferred work (P3/P4/P5 tickets)

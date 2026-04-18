@@ -5,15 +5,17 @@
 - All frontend code lives in `src/app/`. Backend Edge Functions live in `supabase/functions/`.
 - There is no auth — users are identified by a UUID stored in `localStorage` (`fad_user_id`).
 - The Supabase project ID is `kamfamwjswkncftsdgxi`. RPC functions live in Supabase (not in this repo).
-- Never trust the shape of data from RPC or REST responses. Always normalize at the boundary (see `normalizeArticle` in `supabase.ts`).
+- Never trust the shape of data from RPC or REST responses. Always normalize at the boundary (see `normalizeArticle` in `src/app/utils/supabase.ts`).
 - When adding a new RPC call, document its response shape in `docs/supabase-rpc.md` and validate with `normalizeArticle` or an equivalent.
 
 ## Architecture
 
 See detailed docs in `/docs/`:
 - [architecture.md](../docs/architecture.md) — System diagram, email-to-app flow, invariants
-- [supabase-rpc.md](../docs/supabase-rpc.md) — RPC response shapes, DB schema
+- [supabase-rpc.md](../docs/supabase-rpc.md) — RPC response shapes
 - [deploy-edge-functions.md](../docs/deploy-edge-functions.md) — Edge Function deployment, testing, pitfalls
+- [data-model/](../docs/data-model/README.md) — Database schema: tables, enums, FK cascade rules, JSONB shapes
+- [backlog/](../docs/backlog/README.md) — Deferred work (P3/P4/P5 tickets)
 
 ## Testing
 
@@ -31,13 +33,15 @@ See detailed docs in `/docs/`:
 
 ### Subscriber types to always test
 
-There are **three distinct subscriber types**, each with different data states. New features must work for all three:
+There are **three distinct subscriber states**, each with different data. New features must work for all three:
 
-| Type | How they arrive | `feed_token` | `user_interests` | Expected digest behavior |
-|------|----------------|--------------|-------------------|--------------------------|
-| **Landing-page-only** | Email signup on `/`, never completes onboarding | NULL | None | Falls back to latest articles |
-| **Onboarded, no email** | Completes onboarding via `/onboarding`, skips email | NULL | Has topics | Web feed works, no digest sent |
-| **Fully onboarded** | Completes onboarding + provides email | Has token | Has topics | Personalized digest via RPC |
+| State | How they arrive | `digest_subscribers` row | `user_interests` | Expected behavior |
+|------|----------------|--------------------------|-------------------|--------------------------|
+| **Landing-page-only** | Email signup on `/`, never completes onboarding | Yes (with `feed_token`) | None | Digest falls back to latest 8 articles (no topic match possible) |
+| **Onboarded, no email** | Completes onboarding via `/onboarding`, skips email | No | Yes | Web feed works via `get_user_feed`; no digest to send |
+| **Fully onboarded** | Completes onboarding + provides email | Yes (with `feed_token`) | Yes | Personalized digest via `get_subscriber_feed` |
+
+> `feed_token` is NOT NULL at the DB level (defaulted at INSERT via `encode(gen_random_bytes(18), 'base64')`), so every `digest_subscribers` row has one. The real distinguishing fact between landing-only and fully-onboarded is whether the user has any `user_interests` rows — that's what controls whether `get_subscriber_feed` can return personalized articles or the fallback path fires.
 
 When adding any feature that touches the feed or digest pipeline, verify it works for the landing-page-only subscriber — this is the most common blind spot.
 
@@ -49,32 +53,40 @@ When adding any feature that touches the feed or digest pipeline, verify it work
 Landing.tsx (email form)
   → saveDigestSubscription(userId, email, 'daily')
     → INSERT into digest_subscribers (user_id, email, frequency)
-    → feed_token = NULL, no user_interests rows
+    → feed_token auto-populated by DB default; no user_interests rows yet
 
-send-digest cron (07:00 UTC)
-  → SELECT active subscribers due for send
-  → getSubscriberArticles(supabase, feed_token)
-    → IF feed_token exists: try get_subscriber_feed RPC
-    → IF RPC returns empty OR feed_token is NULL:
-       → FALLBACK: fetch latest 8 articles from ai_articles
+send-digest cron (hourly, timezone-aware)
+  → get_digest_recipients(target_hour)
+      returns subscribers whose local delivery hour == target_hour
+      AND last_sent_at is NULL or older than today
+  → for each subscriber:
+      getSubscriberArticles(supabase, feed_token)
+        → try get_subscriber_feed RPC
+        → IF RPC returns empty (no user_interests → no topic match):
+           → FALLBACK: fetch latest 8 complete articles from ai_articles
   → Render and send email
 ```
 
-**Invariant:** Every active subscriber in `digest_subscribers` MUST receive a digest email, regardless of whether they completed onboarding. The fallback to latest articles ensures this.
+**Invariant:** Every active subscriber in `digest_subscribers` MUST receive a digest email at their local morning hour, regardless of whether they completed onboarding. The fallback to latest articles ensures landing-page-only users still receive a meaningful email.
 
 ### Onboarding → personalized feed
 
+`Onboarding.tsx` has 4 UI steps, but **all DB writes happen on the final "Save & continue"** in a single sequential batch (see `handleSaveAndContinue` in `src/app/components/Onboarding.tsx`):
+
 ```
-Onboarding.tsx (4 steps)
-  → Step 1: saveOnboardingSurvey(userId, style, density)
-  → Step 3: saveUserInterests(userId, topicIds)
-  → Step 4: saveUserTickers(userId, tickers)
-  → Step 4: saveDigestSubscription(userId, email, frequency)
-  → setOnboardingComplete() in localStorage
-  → navigate('/feed')
+User progresses through steps 1–4 in memory (no writes yet)
+  → Final "Save & continue":
+      await saveOnboardingSurvey(userId, { investing_style, content_density })
+      await saveUserInterests(userId, topicIds)
+      if tickers: await saveUserTickers(userId, tickers)
+      if email && email !== existingEmail:
+         await saveDigestSubscription(userId, email, frequency)
+         triggerWelcomeEmail(subscriber.id)
+      setOnboardingComplete() in localStorage
+      navigate('/feed')
 ```
 
-**Invariant:** After onboarding, `user_interests` rows exist for the user. The `get_subscriber_feed` RPC joins through these rows to build a personalized feed.
+**Invariant:** After onboarding, `user_interests` rows exist for the user. The `get_subscriber_feed` RPC joins through these rows to build a personalized feed. If any of the `await`s throws, earlier writes are NOT rolled back — design error handling accordingly.
 
 ## Critical Rules
 
@@ -84,17 +96,19 @@ Onboarding.tsx (4 steps)
 3. **`track-click` must pass `?t=<feed_token>` in the redirect URL.** Without it, users land on onboarding instead of their feed.
 
 ### Base URL
-All app URLs must use `https://carloxavier.github.io/finance-news-ai-digest`. This is configured in:
-- `vite.config.ts` (`base`)
-- `routes.ts` (`basename`)
-- `track-click/index.ts` (`FALLBACK_URL`)
-- `send-digest/index.ts` (`SITE_BASE_URL`)
 
-Never hardcode `finnopolis.com` as a redirect target.
+Production domain: `https://finnopolis.com`.
+
+- `vite.config.ts` (`base`) and `routes.ts` (`basename`) are both `/` — the app is served from the domain root, and **in-app navigation is always relative** (`/feed`, `/article/:id`). Don't hardcode the full origin in frontend code; relative paths resolve correctly in dev, preview, and prod.
+- Absolute URLs are only required **outside the SPA**, where there is no `window.location` to anchor against:
+  - `supabase/functions/_shared/email.ts` → `SITE_BASE_URL` (used by welcome + digest emails)
+  - `supabase/functions/track-click/index.ts` → `FALLBACK_URL` (302 redirect target)
+
+These three Edge Function constants currently hardcode `https://finnopolis.com`. Keep them aligned. Ideally promote to a Supabase secret so a future domain change is a single secret update.
 
 ### SQL / RPC
 - Never use `DISTINCT ON` with a `LIMIT` unless the `ORDER BY` matches the intended sort. Use a subquery to deduplicate first, then sort and limit.
-- Always pass article data through `normalizeArticle()` before rendering — field names vary between RPCs.
+- Article data is normalized via `normalizeArticle()` inside `src/app/utils/supabase.ts`. `normalizeArticle` is module-private; callers of the exported API fns (`getSubscriberFeed`, `getUserFeed`, `getArticleById`, etc.) receive already-normalized `Article` objects and must not re-normalize. If you add a new RPC, normalize inside `supabase.ts` before returning.
 
 ### Edge Functions
 - All Edge Functions use `verify_jwt=false` (public endpoints for email links/webhooks).
