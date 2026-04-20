@@ -21,12 +21,12 @@ All functions use `verify_jwt=false` (they are public endpoints used in email li
 **Purpose:** Logs email article clicks and redirects to the app's article detail page with the subscriber's feed token.
 
 **Flow:**
-1. Receives `GET ?t=<click_token>`
-2. Looks up `click_token` in `digest_sent_articles`, joins `digest_subscribers` to get `feed_token`
-3. Inserts into `article_clicks` (fire-and-forget)
-4. Redirects `302` to `<APP_BASE_URL>/article/<article_id>?t=<feed_token>`
+1. Receives `GET ?a=<article_id>&t=<feed_token>`
+2. If `a` is present, computes the redirect target: `<APP_BASE_URL>/article/<article_id>?t=<feed_token>` (or without `?t=` when `t` is missing).
+3. If `t` is present, looks up `digest_subscribers` by `feed_token` and inserts into `article_clicks` (fire-and-forget). No blocking on the click log.
+4. Redirects `302` to the computed target. Falls back to `<APP_BASE_URL>` only when `a` is missing.
 
-**Critical:** The redirect URL must include `?t=<feed_token>`. Without it, the user has no session and will see onboarding instead of their article/feed.
+**Critical:** `a` is the public article identifier. `t` is the subscriber's `feed_token`. Clicks from unknown/missing tokens still land the user on the article — click logging is best-effort.
 
 ### send-digest
 
@@ -38,10 +38,9 @@ All functions use `verify_jwt=false` (they are public endpoints used in email li
 
 **Article source:** Uses `get_subscriber_feed` RPC with `p_limit: 8`. This is the same RPC the web feed uses, ensuring email and web show the same articles.
 
-**Click token lifecycle:**
-1. Generates a unique `click_token` per article per send
-2. Embeds it in the email link: `<SUPABASE_URL>/functions/v1/track-click?t=<click_token>`
-3. Upserts to `digest_sent_articles` with `ignoreDuplicates: false` — this is critical so re-sends update the token in the DB to match the latest email
+**Email link pattern:**
+1. Each article card links to `<SUPABASE_URL>/functions/v1/track-click?a=<article_id>&t=<feed_token>`
+2. `digest_sent_articles` is upserted per article with `ignoreDuplicates: false` (still used: keeps `sent_at` / `digest_batch` fresh for the most recent delivery). The row's `click_token` column is left NULL — the column is legacy and will be dropped in a future schema cleanup.
 
 ### send-welcome
 
@@ -115,8 +114,8 @@ curl -X POST 'https://kamfamwjswkncftsdgxi.supabase.co/functions/v1/send-digest'
 
 | Pitfall | What goes wrong | Prevention |
 |---------|----------------|------------|
-| `ignoreDuplicates: true` on upsert | Re-sent digest has new click tokens but DB keeps old ones → track-click can't find token → fallback redirect | Always use `ignoreDuplicates: false` |
-| Missing `?t=feed_token` in redirect | User lands on app with no session → sees onboarding | track-click must join digest_subscribers to get feed_token |
+| `ignoreDuplicates: true` on upsert | `sent_at` / `digest_batch` on `digest_sent_articles` would stay stale on re-sends, hiding the latest delivery from history | Always use `ignoreDuplicates: false` |
+| Email URL missing `?a=<article_id>` | track-click has no destination and redirects to the home page | `send-digest` must embed `a=<article.id>` on every link |
 | Using `get_user_feed` for digest | Different ranking + stale cache → email articles don't match web | Always use `get_subscriber_feed` for digest |
 | Drifted `SITE_BASE_URL` between functions | `send-digest`, `send-welcome`, and `track-click` each hardcode the base URL; if one is updated and the others aren't, links break across surfaces | Keep the three `SITE_BASE_URL`/`FALLBACK_URL` constants aligned, or promote the value to a Supabase secret |
 | `DISTINCT ON` with wrong `ORDER BY` | `LIMIT` applied before date sort → misses newest articles | Deduplicate with subquery, then sort by date, then limit |

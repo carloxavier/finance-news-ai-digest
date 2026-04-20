@@ -92,8 +92,8 @@ User progresses through steps 1–4 in memory (no writes yet)
 
 ### Email Digest & Feed Consistency
 1. **Both the web feed and email digest must use `get_subscriber_feed` RPC.** Never use `get_user_feed` for digest emails — it has different ranking and caching.
-2. **Upserts to `digest_sent_articles` must use `ignoreDuplicates: false`.** Otherwise re-sent digests have mismatched click tokens and tracking breaks.
-3. **`track-click` must pass `?t=<feed_token>` in the redirect URL.** Without it, users land on onboarding instead of their feed.
+2. **Upserts to `digest_sent_articles` must use `ignoreDuplicates: false`.** The unique constraint is `(subscriber_id, article_id)`; on a re-send, the upsert must refresh `sent_at` / `digest_batch` so history reflects the most recent delivery.
+3. **Email article links must carry both `?a=<article_id>` and `?t=<feed_token>`.** `track-click` reads both from the URL — the article_id is the public redirect destination; the feed_token identifies the subscriber for click logging and authenticates the resulting web session. (Historical: prior to April 2026 these links used an opaque rotating `click_token`; that design was replaced because re-sends invalidated older emails.)
 
 ### Base URL
 

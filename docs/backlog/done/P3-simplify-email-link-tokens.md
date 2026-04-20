@@ -1,7 +1,8 @@
 # P3 — Simplify email-link tokens (drop click_token, use article_id + feed_token)
 
 **Filed**: 2026-04-20
-**Status**: open
+**Status**: done
+**Closed**: 2026-04-20 (PR #XXX)
 
 ## Summary
 
@@ -123,3 +124,25 @@ https://<supabase>/functions/v1/track-click?a=<article_id>&t=<feed_token>
 
 P3 — user-visible regression every time an article re-appears in a
 later digest. Cheap, surgical fix.
+
+## Progress log
+
+- **2026-04-20** — Work started. Scope per the Target Design section
+  above. Explicit accept: existing emails with the old click_token
+  URL pattern will break; prototype-stage trade-off approved by the
+  user.
+- **2026-04-20** — Completed.
+  - `supabase/functions/track-click/index.ts` rewritten: reads `a`
+    and `t`, redirects using `article_id` from URL, logs click
+    fire-and-forget via `feed_token` → subscriber lookup.
+  - `supabase/functions/send-digest/index.ts`: `generateClickToken`,
+    `ArticleWithToken`, and the `click_token` field on the
+    `digest_sent_articles` upsert all removed. Article cards embed
+    `?a=<article.id>&t=<feed_token>` directly.
+  - Docs updated: `docs/architecture.md`, `docs/deploy-edge-functions.md`,
+    `docs/data-model/engagement-tables.md`, `guidelines/Guidelines.md`.
+  - `npm test` 72/72, `npm run build` clean. Frontend contract test
+    `digest-subscriber-flow.test.ts` still passes because
+    `getSubscriberArticles` signature is unchanged.
+  - Edge Function redeploy required post-merge (out of band of the
+    git pipeline, per `docs/deploy-edge-functions.md`).
