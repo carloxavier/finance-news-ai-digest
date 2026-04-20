@@ -19,9 +19,13 @@ See detailed docs in `/docs/`:
 
 ## Testing
 
-- Test runner: **Vitest** (`npm test` to run, `npm run test:watch` for watch mode).
-- Tests live next to source code in `__tests__/` directories (e.g. `src/app/__tests__/`, `src/app/utils/__tests__/`).
-- Run `npm test` before pushing any change that touches routes, utilities, or Edge Functions.
+Full strategy: [`docs/testing.md`](../docs/testing.md). Summary:
+
+- **Unit tests** — Vitest (`npm test` / `npm run test:watch`). Colocated in `__tests__/` directories next to source.
+- **Frontend smoke** — Playwright (`npm run smoke`, needs `npm run dev` running). Required on any frontend-touching PR. Catches route-render and localStorage-persistence bugs that unit tests can't reach.
+- **Edge Function contract tests** — Vitest re-implementations of critical Edge Function branches (e.g. `src/app/__tests__/digest-subscriber-flow.test.ts`). Update whenever the real Edge Function changes.
+
+Run `npm test && npm run build` before pushing any change. Add `npm run smoke` when the change touches frontend behaviour.
 
 ### What to test
 
