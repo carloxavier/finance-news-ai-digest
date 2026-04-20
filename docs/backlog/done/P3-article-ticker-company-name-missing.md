@@ -1,7 +1,8 @@
 # P3 — Article detail shows tickers with no company name
 
 **Filed**: 2026-04-20
-**Status**: open
+**Status**: done
+**Closed**: 2026-04-20 (PR #XXX)
 
 ## Summary
 
@@ -47,3 +48,22 @@ companion text.
 
 P3 — user-visible content quality issue. Small scoped fix;
 unblocks trust in the analyst section.
+
+## Progress log
+
+- **2026-04-20** — Work started. Scope: add `companyName?: string` to
+  `AnalystData` TS type; render it inline next to the ticker symbol
+  in `AnalystDataSection`. No seeder changes (seeder v2 already emits
+  the field). Rendering is defensive: falls back to ticker-only when
+  `companyName` is absent (legacy articles pre-seeder-v2).
+
+  The ticker-only chips at `ArticleDetail.tsx:133–144` (plus the
+  sibling chip rows in `Feed.tsx:298`, `ExploreFeed.tsx:146`, and
+  `Landing.tsx:822`) are out of scope for this fix because
+  `extracted_tickers` is a `text[]` array with no company-name
+  mapping. Full fix lives in `P4-normalize-ticker-company-names.md`.
+- **2026-04-20** — Completed. `companyName` added to `AnalystData` type,
+  rendered next to ticker in `AnalystDataSection`. Ticker chips in
+  `ArticleDetail` left unchanged; out of scope per ticket. `npm test`
+  72/72 passing after the change. Manual browser verification pending
+  in the PR review.

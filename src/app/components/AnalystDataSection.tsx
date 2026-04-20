@@ -10,10 +10,15 @@ export function AnalystDataSection({ analystData }: AnalystDataSectionProps) {
       {Object.entries(analystData).map(([ticker, data]) => (
         <div key={ticker} className="bg-[var(--card)] border border-[var(--layer1-blue)]/30 rounded-xl p-6">
           {/* Ticker Header */}
-          <div className="flex items-baseline gap-3 mb-6">
+          <div className="flex items-baseline gap-3 mb-6 flex-wrap">
             <h3 className="text-2xl text-[var(--layer1-blue)]" style={{ fontFamily: 'var(--font-mono)' }}>
               {ticker}
             </h3>
+            {data.companyName && (
+              <span className="text-lg text-white/80">
+                {data.companyName}
+              </span>
+            )}
             <div className="text-sm text-white/60">
               Current: <span className="text-white">${data.currentPrice.toFixed(2)}</span>
             </div>

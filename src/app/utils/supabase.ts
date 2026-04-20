@@ -39,6 +39,7 @@ export interface AnalystRecommendation {
 }
 
 export interface AnalystData {
+  companyName?: string;
   recommendation: AnalystRecommendation;
   priceTarget: {
     mean: number;
