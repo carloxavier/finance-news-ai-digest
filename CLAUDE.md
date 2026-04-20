@@ -52,6 +52,13 @@ When a task involves these topics, load the matching doc(s) before acting:
   should match the live schema.
 - **Tests**: Vitest, colocated in `__tests__/`. Run `npm test` before
   pushing anything that touches routes, utils, or Edge Functions.
+- **Frontend smoke**: for any PR that could affect rendering, routing,
+  auth/feed_token flow, or localStorage side effects, run
+  `npm run dev &` then `npm run smoke` (headless Playwright). Unit
+  tests + `npm run build` catch compile/logic errors; the smoke
+  catches "route renders but screen is blank" and session-persistence
+  bugs. Fixtures in `scripts/smoke-frontend.mjs` are env-var
+  overridable when they go stale.
 - **Base URL**: `https://finnopolis.com`. Frontend navigation is relative
   (`basename: '/'`, Vite `base: '/'`). Absolute URLs are only needed in
   Edge Functions that emit email HTML or 302 redirects — those currently
