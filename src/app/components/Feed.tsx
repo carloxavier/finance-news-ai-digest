@@ -40,15 +40,12 @@ export function Feed() {
   const selectedChipKey = Array.from(selectedGroups).sort().join(CHIP_KEY_SEPARATOR);
   const { articles, loading, firstLoadDone, error } = useUserFeed(feedMode, selectedChipKey, onboarded);
 
-  // Mount-only: guards, email, and the welcome-card decision
+  // Mount-only: guards, email + context resolution, and the welcome-card decision
   useEffect(() => {
     if (!hasCompletedOnboarding()) {
       navigate("/");
       return;
     }
-
-    // Fetch subscriber email for avatar display
-    getUserDigestEmail(getUserId()).then((e) => setEmail(e || ""));
 
     // Populate topic tabs from the DB so every tab is a real topic with
     // at least one article in the last 30 days.
@@ -56,16 +53,23 @@ export function Feed() {
       .then(setTopics)
       .catch((err) => console.warn("Failed to load active topics:", err));
 
-    // Fetch the user's topics + tickers for the "Your Brief" context strip.
+    // Fetch the user's email, topics, and tickers for the header avatar +
+    // the "Your Brief" context strip.
+    //
     // For email-link subscribers (feed_token present), the localStorage
-    // user_id may not match the subscriber's original user_id — querying
-    // user_interests by local user_id would be misleading. Use the subscriber
-    // feed instead, which resolves the actual subscriber row server-side.
+    // user_id may not match the subscriber's original user_id (different
+    // device, cleared storage, incognito). Querying digest_subscribers or
+    // user_interests by local user_id would miss the real subscriber row.
+    // Resolve through the feed_token via getSubscriberFeed instead — its
+    // response carries subscriber.email and topics server-side. For direct
+    // signups (no feed_token), the localStorage user_id is authoritative
+    // so we query by user_id.
     const feedToken = getFeedToken();
     if (feedToken) {
       getSubscriberFeed(feedToken)
         .then((feed) => {
           if (feed) {
+            setEmail(feed.subscriber.email || "");
             setUserTopicNames(feed.topics.map((t) => t.display_name));
           }
           // Subscriber feed does not expose tickers today.
@@ -75,10 +79,12 @@ export function Feed() {
         .finally(() => setContextLoading(false));
     } else {
       Promise.all([
+        getUserDigestEmail(getUserId()).catch(() => null),
         getUserInterestTopicNames(getUserId()).catch(() => [] as string[]),
         getUserTrackedTickers(getUserId()).catch(() => [] as string[]),
       ])
-        .then(([names, tickers]) => {
+        .then(([e, names, tickers]) => {
+          setEmail(e || "");
           setUserTopicNames(names);
           setUserTickers(tickers);
         })

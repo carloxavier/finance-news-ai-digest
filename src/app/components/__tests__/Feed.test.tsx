@@ -56,6 +56,7 @@ afterEach(() => {
 
 import { Feed } from "../Feed";
 import {
+  getUserDigestEmail,
   getUserInterestTopicNames,
   getUserTrackedTickers,
   getSubscriberFeed,
@@ -74,6 +75,11 @@ describe("Feed — context strip data source", () => {
   beforeEach(() => {
     navigateMock.mockReset();
     vi.mocked(getFeedToken).mockReset();
+    // mockClear (not mockReset) preserves the default mockResolvedValue
+    // from the module-level vi.mock factory; mockReset wipes it and then
+    // subsequent tests in other describe blocks that rely on the default
+    // start getting undefined from the mock.
+    vi.mocked(getUserDigestEmail).mockClear();
     vi.mocked(getUserInterestTopicNames).mockReset();
     vi.mocked(getUserTrackedTickers).mockReset();
     vi.mocked(getSubscriberFeed).mockReset();
@@ -81,6 +87,7 @@ describe("Feed — context strip data source", () => {
 
   it("resolves topic names via user_interests when there is no feed_token", async () => {
     vi.mocked(getFeedToken).mockReturnValue(null);
+    vi.mocked(getUserDigestEmail).mockResolvedValue("you@example.com");
     vi.mocked(getUserInterestTopicNames).mockResolvedValue(["Macro"]);
     vi.mocked(getUserTrackedTickers).mockResolvedValue(["NVDA"]);
 
@@ -92,6 +99,8 @@ describe("Feed — context strip data source", () => {
     expect(screen.getByText("Macro")).toBeInTheDocument();
     expect(screen.getByText("NVDA")).toBeInTheDocument();
     expect(getSubscriberFeed).not.toHaveBeenCalled();
+    // Direct-signup path: email comes from the local-user-id query.
+    expect(getUserDigestEmail).toHaveBeenCalledWith("local-user");
   });
 
   it("resolves topic names from getSubscriberFeed (not local user_id) when a feed_token exists", async () => {
@@ -117,6 +126,11 @@ describe("Feed — context strip data source", () => {
     // Crucial: we must NOT have queried user_interests by localStorage user_id.
     expect(getUserInterestTopicNames).not.toHaveBeenCalled();
     expect(getUserTrackedTickers).not.toHaveBeenCalled();
+    // Regression guard for the "avatar shows ? for email-link subscribers"
+    // bug. The local user_id on this device won't map to any subscriber
+    // row, so getUserDigestEmail must NOT be called here — email comes
+    // from the subscriber feed's subscriber.email instead.
+    expect(getUserDigestEmail).not.toHaveBeenCalled();
   });
 });
 
