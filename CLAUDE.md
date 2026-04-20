@@ -32,6 +32,7 @@ When a task involves these topics, load the matching doc(s) before acting:
 | **Database schema** — tables, columns, enums, FK cascade rules | [`docs/data-model/`](./docs/data-model/README.md) |
 | Article `processing_status` state machine + feed RPCs | [`docs/data-model/article-lifecycle.md`](./docs/data-model/article-lifecycle.md) |
 | JSONB shapes, enum cheat sheet, FK cascade map | [`docs/data-model/references.md`](./docs/data-model/references.md) |
+| Testing strategy (unit / smoke / contract layers) | [`docs/testing.md`](./docs/testing.md) |
 | Deferred work (P3/P4/P5 tickets) | [`docs/backlog/`](./docs/backlog/README.md) |
 | Core coding rules, invariants, what to test | [`guidelines/Guidelines.md`](./guidelines/Guidelines.md) |
 
@@ -50,15 +51,11 @@ When a task involves these topics, load the matching doc(s) before acting:
 - **Schema changes must ship with a `docs/data-model/` update in the same
   commit.** The data-model docs are descriptive, not aspirational — they
   should match the live schema.
-- **Tests**: Vitest, colocated in `__tests__/`. Run `npm test` before
-  pushing anything that touches routes, utils, or Edge Functions.
-- **Frontend smoke**: for any PR that could affect rendering, routing,
-  auth/feed_token flow, or localStorage side effects, run
-  `npm run dev &` then `npm run smoke` (headless Playwright). Unit
-  tests + `npm run build` catch compile/logic errors; the smoke
-  catches "route renders but screen is blank" and session-persistence
-  bugs. Fixtures in `scripts/smoke-frontend.mjs` are env-var
-  overridable when they go stale.
+- **Tests**: three layers — unit (Vitest), frontend smoke (Playwright),
+  Edge Function contract. Full rationale + when-to-run-what in
+  [`docs/testing.md`](./docs/testing.md). Minimums:
+  - Every PR: `npm test` + `npm run build`.
+  - Frontend-touching PR: also `npm run dev &` + `npm run smoke`.
 - **Base URL**: `https://finnopolis.com`. Frontend navigation is relative
   (`basename: '/'`, Vite `base: '/'`). Absolute URLs are only needed in
   Edge Functions that emit email HTML or 302 redirects — those currently
