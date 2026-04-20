@@ -234,7 +234,7 @@ export function ArticleDetail() {
             <AlertTriangle className="w-5 h-5 text-[var(--layer2-amber)] flex-shrink-0" />
             <div>
               <div className="text-sm uppercase tracking-wider text-[var(--layer2-amber)] mb-1" style={{ fontFamily: 'var(--font-mono)' }}>
-                AI Inference — Not Sourced
+                AI Inference
               </div>
               <div className="text-xs text-white/60">
                 The following insights are AI-generated and should be verified independently

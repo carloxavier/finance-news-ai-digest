@@ -64,19 +64,25 @@ Don't delete closed tickets — `done/` is the project's institutional memory fo
 
 ### Open
 
-- [P5 — Rename misleading cron job archive-digest-sent](./P5-rename-archive-digest-sent-cron.md)
-- [P5 — Decide fate of news_sources table](./P5-decide-fate-of-news-sources.md)
-- [P5 — Decide fate of stats_weekly_snapshots table](./P5-decide-fate-of-stats-weekly-snapshots.md)
-
-> Several additional P3/P4/P5 tickets are referenced from elsewhere in the docs
-> (e.g. `P3-client-generated-user-id-authz.md`, `P4-consolidate-feed-rpcs.md`)
-> but have not yet been filed into this folder. Create them here when the
-> corresponding work is picked up.
+- [P3 — client-generated user_id is an authZ bypass](./P3-client-generated-user-id-authz.md)
+- [P4 — insufficient article freshness in digest](./P4-insufficient-article-freshness-in-digest.md)
+- [P4 — consolidate feed RPCs from four to two](./P4-consolidate-feed-rpcs.md)
+- [P4 — normalize ticker → company name](./P4-normalize-ticker-company-names.md)
+- [P4 — stop rendering single-publication name](./P4-stop-rendering-single-publication-name.md)
+- [P4 — user_tickers ranking boost](./P4-user-tickers-ranking-boost.md)
+- [P5 — decide fate of news_sources table](./P5-decide-fate-of-news-sources.md)
+- [P5 — decide fate of stats_weekly_snapshots table](./P5-decide-fate-of-stats-weekly-snapshots.md)
+- [P5 — drop legacy brief column](./P5-drop-legacy-brief-column.md)
+- [P5 — rename misleading cron job archive-digest-sent](./P5-rename-archive-digest-sent-cron.md)
+- [P5 — secure welcome email + signup rate limiting](./P5-secure-welcome-and-signup-rate-limiting.md)
 
 ### Done
 
-_None yet._
+- [P3 — article-ticker-company-name-missing](./done/P3-article-ticker-company-name-missing.md) — Closed 2026-04-20
+- [P3 — inference-label-not-sourced-copy](./done/P3-inference-label-not-sourced-copy.md) — Closed 2026-04-20
 
 ## Migration note
 
-This backlog was migrated from Notion on 2026-04-18. The older "P4 — Align get_subscriber_feed ranking with get_user_feed" ticket is not ported separately because it was superseded by the broader [feed RPC consolidation ticket](./P4-consolidate-feed-rpcs.md), which includes the ranking alignment as part of its acceptance criteria.
+This backlog was migrated from Notion on 2026-04-18. As of 2026-04-20,
+all referenced deferred tickets have been filed into this folder. Notion
+retains the historical record; GitHub is canonical for all new work.
