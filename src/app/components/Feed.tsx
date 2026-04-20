@@ -3,7 +3,6 @@ import { useNavigate } from "react-router";
 import {
   getActiveTopics,
   formatArticleDate,
-  getUserDigestEmail,
   getUserInterestTopicNames,
   getUserTrackedTickers,
   getSubscriberFeed,
@@ -27,7 +26,6 @@ const SUPABASE_ANON_KEY =
 export function Feed() {
   const navigate = useNavigate();
   const [dataIssue, setDataIssue] = useState(false);
-  const [email, setEmail] = useState("");
   const [feedMode, setFeedMode] = useState<"brief" | "explore">("brief");
   const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set());
   const [userTopicNames, setUserTopicNames] = useState<string[]>([]);
@@ -40,15 +38,12 @@ export function Feed() {
   const selectedChipKey = Array.from(selectedGroups).sort().join(CHIP_KEY_SEPARATOR);
   const { articles, loading, firstLoadDone, error } = useUserFeed(feedMode, selectedChipKey, onboarded);
 
-  // Mount-only: guards, email, and the welcome-card decision
+  // Mount-only: guards and the welcome-card decision
   useEffect(() => {
     if (!hasCompletedOnboarding()) {
       navigate("/");
       return;
     }
-
-    // Fetch subscriber email for avatar display
-    getUserDigestEmail(getUserId()).then((e) => setEmail(e || ""));
 
     // Populate topic tabs from the DB so every tab is a real topic with
     // at least one article in the last 30 days.
@@ -224,7 +219,7 @@ export function Feed() {
   }
 
   return (
-    <AppShell email={email}>
+    <AppShell>
       {showWelcome && (
         <WelcomeCard
           onDone={() => {
