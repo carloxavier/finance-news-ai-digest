@@ -65,8 +65,6 @@ Don't delete closed tickets — `done/` is the project's institutional memory fo
 ### Open
 
 - [P3 — client-generated user_id is an authZ bypass](./P3-client-generated-user-id-authz.md)
-- [P3 — article detail shows tickers with no company name](./P3-article-ticker-company-name-missing.md)
-- [P3 — AI Inference "— Not Sourced" label is redundant](./P3-inference-label-not-sourced-copy.md)
 - [P4 — insufficient article freshness in digest](./P4-insufficient-article-freshness-in-digest.md)
 - [P4 — consolidate feed RPCs from four to two](./P4-consolidate-feed-rpcs.md)
 - [P4 — normalize ticker → company name](./P4-normalize-ticker-company-names.md)
@@ -80,7 +78,8 @@ Don't delete closed tickets — `done/` is the project's institutional memory fo
 
 ### Done
 
-_None yet in this session._
+- [P3 — article-ticker-company-name-missing](./done/P3-article-ticker-company-name-missing.md) — Closed 2026-04-20
+- [P3 — inference-label-not-sourced-copy](./done/P3-inference-label-not-sourced-copy.md) — Closed 2026-04-20
 
 ## Migration note
 
