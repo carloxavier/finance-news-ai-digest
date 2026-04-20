@@ -42,20 +42,6 @@ interface Article {
   inference_watch: string[];
 }
 
-interface ArticleWithToken extends Article {
-  clickToken: string;
-}
-
-// ─── Click token generator ──────────────────────────────────────────
-
-function generateClickToken(): string {
-  const bytes = new Uint8Array(9);
-  crypto.getRandomValues(bytes);
-  return btoa(String.fromCharCode(...bytes))
-    .replace(/[+/=]/g, c => c === '+' ? '-' : c === '/' ? '_' : '')
-    .slice(0, 12);
-}
-
 // ─── Main handler ────────────────────────────────────────────────────
 
 Deno.serve(async (req: Request) => {
@@ -123,12 +109,6 @@ Deno.serve(async (req: Request) => {
           continue;
         }
 
-        // Assign click tokens to each article
-        const articlesWithTokens: ArticleWithToken[] = articles.map(a => ({
-          ...a,
-          clickToken: generateClickToken(),
-        }));
-
         // Get their tickers for highlighting
         const { data: tickerRows } = await supabase
           .from("user_tickers")
@@ -137,17 +117,19 @@ Deno.serve(async (req: Request) => {
         const userTickers = (tickerRows || []).map((r: { ticker: string }) => r.ticker);
 
         // Build and send email
-        const html = renderDigestEmail(articlesWithTokens, userTickers, sub);
+        const html = renderDigestEmail(articles, userTickers, sub);
         const subject = `📊 Your morning brief — ${formatDate(new Date())}`;
 
         await sendEmail({ to: sub.email, subject, html, batchId });
 
-        // Record sent articles with click tokens
-        const sentRecords = articlesWithTokens.map(a => ({
+        // Record send history. click_token is intentionally left NULL — the
+        // email URL pattern now encodes article_id + feed_token directly (see
+        // docs/backlog/done/P3-simplify-email-link-tokens.md). The column is
+        // scheduled for DROP in a future schema cleanup.
+        const sentRecords = articles.map(a => ({
           subscriber_id: sub.id,
           article_id: a.id,
           digest_batch: batchId,
-          click_token: a.clickToken,
         }));
 
         await supabase
@@ -264,7 +246,7 @@ function formatArticleTime(dateStr: string, timezone: string): string {
 // ─── Email template ──────────────────────────────────────────────────
 
 function renderDigestEmail(
-  articles: ArticleWithToken[],
+  articles: Article[],
   userTickers: string[],
   subscriber: Subscriber,
 ): string {
@@ -272,7 +254,7 @@ function renderDigestEmail(
   const unsubUrl = `${SITE_BASE_URL}/unsubscribe?token=${subscriber.unsubscribe_token}`;
 
   const articleCards = articles
-    .map((article) => renderArticleCard(article, userTickers, subscriber.timezone))
+    .map((article) => renderArticleCard(article, userTickers, subscriber.timezone, subscriber.feed_token))
     .join("");
 
   return renderEmailLayout({
@@ -285,11 +267,13 @@ function renderDigestEmail(
 }
 
 function renderArticleCard(
-  article: ArticleWithToken,
+  article: Article,
   userTickers: string[],
   timezone: string,
+  feedToken: string | null,
 ): string {
-  const url = `${TRACK_CLICK_URL}?t=${article.clickToken}`;
+  const tokenParam = feedToken ? `&t=${feedToken}` : "";
+  const url = `${TRACK_CLICK_URL}?a=${article.id}${tokenParam}`;
   const color = signalColor(article.consensus_signal);
   const bg = signalBg(article.consensus_signal);
 

@@ -80,6 +80,7 @@ Don't delete closed tickets — `done/` is the project's institutional memory fo
 
 - [P3 — article-ticker-company-name-missing](./done/P3-article-ticker-company-name-missing.md) — Closed 2026-04-20
 - [P3 — inference-label-not-sourced-copy](./done/P3-inference-label-not-sourced-copy.md) — Closed 2026-04-20
+- [P3 — simplify-email-link-tokens](./done/P3-simplify-email-link-tokens.md) — Closed 2026-04-20
 
 ## Migration note
 

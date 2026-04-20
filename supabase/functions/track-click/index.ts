@@ -1,6 +1,13 @@
 // track-click Edge Function
-// GET ?t={click_token} → log click → 302 redirect to Finnopolis article detail page
+// GET ?a={article_id}&t={feed_token} → log click → 302 redirect to Finnopolis article detail page
 // Deployed with verify_jwt=false (public endpoint, used in email links)
+//
+// History: previously keyed on a rotating per-(subscriber × article) click_token
+// that landed in digest_sent_articles. The token was rotated on every re-send
+// via the (subscriber_id, article_id) unique upsert, so older emails broke
+// silently. The simplified design keeps identity in feed_token (which is
+// per-subscriber and stable) and uses the public article_id as the redirect
+// target. See docs/backlog/done/P3-simplify-email-link-tokens.md.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 
@@ -9,34 +16,59 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const FALLBACK_URL = "https://finnopolis.com";
 
 Deno.serve(async (req: Request) => {
-  const token = new URL(req.url).searchParams.get("t");
-  if (!token) return Response.redirect(FALLBACK_URL, 302);
+  const url = new URL(req.url);
+  const articleId = url.searchParams.get("a");
+  const feedToken = url.searchParams.get("t");
 
+  // Without an article_id we cannot produce a meaningful destination.
+  if (!articleId) return Response.redirect(FALLBACK_URL, 302);
+
+  const destination = feedToken
+    ? `${FALLBACK_URL}/article/${articleId}?t=${feedToken}`
+    : `${FALLBACK_URL}/article/${articleId}`;
+
+  // Log the click if we can identify the subscriber via feed_token. Fire-and-
+  // forget: don't block the redirect on this.
+  if (feedToken) {
+    logClick(articleId, feedToken).catch((err: Error) => {
+      console.error("Failed to log click:", err.message);
+    });
+  }
+
+  return Response.redirect(destination, 302);
+});
+
+async function logClick(articleId: string, feedToken: string): Promise<void> {
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-  // Look up the sent article record and the subscriber's feed token
+  const { data: subscriber } = await supabase
+    .from("digest_subscribers")
+    .select("id")
+    .eq("feed_token", feedToken)
+    .maybeSingle();
+
+  if (!subscriber) {
+    console.log(`No subscriber for feed_token=${feedToken.slice(0, 6)}… (skipping click log)`);
+    return;
+  }
+
+  // Attach to the most recent delivery of this article to this subscriber, if
+  // one exists. The FK column is ON DELETE SET NULL so NULL is acceptable.
   const { data: sent } = await supabase
     .from("digest_sent_articles")
-    .select("id, subscriber_id, article_id, subscriber:digest_subscribers!subscriber_id(feed_token)")
-    .eq("click_token", token)
-    .single();
+    .select("id")
+    .eq("subscriber_id", subscriber.id)
+    .eq("article_id", articleId)
+    .order("sent_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
 
-  if (!sent) return Response.redirect(FALLBACK_URL, 302);
-
-  // Log click (fire-and-forget, don't block the redirect)
-  supabase.from("article_clicks").insert({
-    subscriber_id: sent.subscriber_id,
-    article_id: sent.article_id,
-    sent_article_id: sent.id,
+  await supabase.from("article_clicks").insert({
+    subscriber_id: subscriber.id,
+    article_id: articleId,
+    sent_article_id: sent?.id ?? null,
     source: "email",
-  }).then(() => {
-    console.log(`Click logged: subscriber=${sent.subscriber_id} article=${sent.article_id}`);
-  }).catch((err: Error) => {
-    console.error("Failed to log click:", err.message);
   });
 
-  // Redirect to article detail page with feed token so the app can authenticate the user
-  const feedToken = (sent.subscriber as any)?.feed_token;
-  const tokenParam = feedToken ? `?t=${feedToken}` : "";
-  return Response.redirect(`${FALLBACK_URL}/article/${sent.article_id}${tokenParam}`, 302);
-});
+  console.log(`Click logged: subscriber=${subscriber.id} article=${articleId}`);
+}

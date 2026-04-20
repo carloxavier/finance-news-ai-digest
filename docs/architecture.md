@@ -18,10 +18,11 @@
                                    v
                         ┌──────────────────────┐
                         │  track-click (Edge)   │
-                        │  - looks up click_token│
-                        │  - logs click          │
-                        │  - 302 redirect with   │
-                        │    ?t=<feed_token>     │
+                        │  ?a=<article_id>       │
+                        │  &t=<feed_token>       │
+                        │  - logs click (async)  │
+                        │  - 302 redirect to     │
+                        │    /article/<a>?t=<t>  │
                         └──────────┬─────────────┘
                                    │
                           /article/:id?t=TOKEN
@@ -117,17 +118,19 @@ See [`user-tables.md`](./data-model/user-tables.md) for the `timezone` column an
 
 This is the most important flow to understand. Every link in a digest email goes through this path:
 
-1. **Email link**: `https://<supabase>/functions/v1/track-click?t=<click_token>`
-2. **track-click** looks up `click_token` in `digest_sent_articles`, joins to `digest_subscribers` to get the subscriber's `feed_token`.
-3. **Redirect**: `302` to `https://finnopolis.com/article/<article_id>?t=<feed_token>`
+1. **Email link**: `https://<supabase>/functions/v1/track-click?a=<article_id>&t=<feed_token>`
+2. **track-click** reads `a` and `t` from the query. It looks up the subscriber by `feed_token` (for click logging only — fire-and-forget) and proceeds immediately to the redirect.
+3. **Redirect**: `302` to `https://finnopolis.com/article/<article_id>?t=<feed_token>`. If `t` is missing or the subscriber lookup fails, the redirect still goes to `/article/<article_id>` without a token (user lands on the article; the app may show onboarding if they have no prior session).
 4. **ArticleDetail.tsx** reads `?t=` from URL, calls `setFeedToken()` + `setOnboardingComplete()` in localStorage.
 5. **"Back to Feed"** navigates to `/feed`, which reads `getFeedToken()` from localStorage and loads `getSubscriberFeed()`.
 
 ### Invariants
 
-- **Click tokens must match**: `send-digest` generates a click token per article, stores it in `digest_sent_articles`, and embeds it in the email. `track-click` looks it up. If the upsert uses `ignoreDuplicates: true`, re-sending a digest for the same articles will create a mismatch. **Always use `ignoreDuplicates: false`** so the DB token matches the latest email.
-- **Feed token must be passed through**: `track-click` must append `?t=<feed_token>` to the redirect URL. Without it, the user lands on the app with no session and (if they haven't completed onboarding yet) sees Landing instead.
+- **Feed token is the subscriber identity**: `feed_token` is per-subscriber, stable, and NOT NULL at the schema level. The email URL carries it directly. `track-click` uses it to identify the subscriber for click logging; the redirect includes it so the frontend can load the personalized feed.
+- **Article IDs are public**: `article_id` travels in the URL in the clear. That's fine — it's the same identifier that appears in `/article/:id` URLs throughout the app.
 - **Both RPCs must return the same articles**: `send-digest` and the web feed must use `get_subscriber_feed` so the email articles match the web feed. Never use a different RPC for the digest.
+
+> **Historical note**: the email URL previously used a rotating per-(subscriber × article) `click_token` instead of `article_id` + `feed_token`. That design was replaced because the `(subscriber_id, article_id)` unique upsert in `send-digest` rotated the token on every re-send, silently breaking older emails. The `digest_sent_articles.click_token` column still exists but is no longer populated. See [P3 — simplify email-link tokens](./backlog/done/P3-simplify-email-link-tokens.md).
 
 ## Data Flow: Feed Loading
 

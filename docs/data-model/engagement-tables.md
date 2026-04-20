@@ -15,7 +15,7 @@ Every click on an article link gets a row.
 | `source` | text | NO | `'email'` | Enum: `'email'`, `'web'`, `'push'`. See note below. |
 | `sent_article_id` | uuid | YES | — | FK → `digest_sent_articles.id`. **SET NULL** on delete (historical clicks survive digest-record pruning). Populated when the click came through the email-click-tracking flow; NULL for direct-web clicks. |
 
-**How rows are written**: exclusively by the `track-click` edge function. That function takes a `click_token` (embedded in email links), looks up the corresponding `digest_sent_articles` row, and inserts an `article_clicks` row with `source='email'` hardcoded, then 302-redirects the user to the article detail page.
+**How rows are written**: exclusively by the `track-click` edge function. That function receives `?a=<article_id>&t=<feed_token>` in the URL, identifies the subscriber by looking up `digest_subscribers.feed_token`, attaches the most recent `digest_sent_articles.id` for the (subscriber, article) pair as `sent_article_id` (or NULL if no matching row), and inserts an `article_clicks` row with `source='email'` hardcoded — all fire-and-forget — then 302-redirects the user to `/article/<article_id>?t=<feed_token>`.
 
 **`source` enum reality**: `'web'` and `'push'` are allowed by the CHECK constraint but **no code writes them today**. Web-side click tracking hasn't been built (no instrumentation on in-app article navigation), and there's no push-notification infrastructure. If `source` values other than `'email'` appear in production, something has changed that should be documented here.
 
@@ -30,9 +30,9 @@ One row per (subscriber, article) pair included in a digest email. The authorita
 | `article_id` | uuid | NO | — | FK → `ai_articles.id`. **CASCADE** on delete. |
 | `sent_at` | timestamptz | NO | `now()` | |
 | `digest_batch` | text | YES | — | Identifier for the delivery batch this article was part of (e.g., a timestamp or job ID). Used to group "all articles sent to all subscribers in this run." |
-| `click_token` | text | YES | — | Opaque per-article token. Each article link in the email encodes this token; `track-click` resolves it back to the (subscriber, article) pair. |
+| `click_token` | text | YES | — | **Legacy / dead column.** Was an opaque per-(subscriber × article) rotating token embedded in email links until April 2026, when the token model was dropped in favor of `?a=<article_id>&t=<feed_token>`. Not populated by current code; left in place until a future schema cleanup pass drops the column. See [P3 — simplify email-link tokens](../backlog/done/P3-simplify-email-link-tokens.md). |
 
-**Unique constraint**: `(subscriber_id, article_id)` — a given subscriber should not receive the same article twice. `send-digest` uses `upsert` with `onConflict="subscriber_id,article_id"` to enforce this even across retries.
+**Unique constraint**: `(subscriber_id, article_id)` — a given subscriber should not receive the same article twice. `send-digest` uses `upsert` with `onConflict="subscriber_id,article_id"` and `ignoreDuplicates: false` so re-sends keep `sent_at` and `digest_batch` reflecting the most recent delivery.
 
 **Cleanup**: the `archive-digest-sent` cron job (daily @ 04:00 UTC) hard-deletes rows older than 90 days. Despite its name, this is a DELETE, not an archive (no archive table exists for this data) — see [P5 — Rename misleading cron job archive-digest-sent](../backlog/P5-rename-archive-digest-sent-cron.md). Historical clicks are preserved via the `SET NULL` rule on `article_clicks.sent_article_id` — deleting a digest-sent record does not orphan the clicks.
 
