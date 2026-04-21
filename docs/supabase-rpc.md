@@ -10,6 +10,13 @@
 
 ---
 
+## Which subscriber RPC should I call?
+
+- Need subscriber identity + topic names, no articles? → [`get_subscriber_by_token`](#get_subscriber_by_token). Cheap, O(1) index lookup.
+- Need the full ranked article feed for a subscriber? → [`get_subscriber_feed`](#get_subscriber_feed-primary--used-by-both-web-and-email). Expensive, runs the full feed pipeline.
+
+If you're tempted to call `get_subscriber_feed` just to read `subscriber.email`, stop — that's exactly the overfetch `get_subscriber_by_token` was introduced to replace (PR #12).
+
 ## get_subscriber_feed (PRIMARY — used by both web and email)
 
 This is the **canonical feed RPC**. Both the web app (`Feed.tsx`) and the email digest (`send-digest` Edge Function) must use this RPC. Do not use `get_user_feed` for digest emails — it has different ranking logic and a stale cache.

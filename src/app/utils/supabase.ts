@@ -628,6 +628,21 @@ function normalizeArticle(raw: Record<string, unknown>): Article {
   return article;
 }
 
+/**
+ * Full subscriber feed — identity, topics, AND a ranked list of articles.
+ *
+ * **Expensive.** Runs the feed-ranking SQL pipeline (joins
+ * `user_interests → article_topics → ai_articles`, filters by
+ * `published_at`, sorts, limits, normalizes each article). Use only when
+ * you need the article list.
+ *
+ * If you only need the subscriber's identity + topic names (e.g. for an
+ * avatar initial or a context strip), call `getSubscriberByToken` instead.
+ * It's an O(1) index lookup with no article work.
+ *
+ * Current callers that still need articles: `useUserFeed` (web feed on
+ * `/feed` when `feed_token` is present) and `send-digest` (email body).
+ */
 export async function getSubscriberFeed(token: string, limit: number = 20): Promise<SubscriberFeed | null> {
   const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_subscriber_feed`, {
     method: 'POST',
