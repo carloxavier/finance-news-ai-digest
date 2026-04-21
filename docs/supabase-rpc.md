@@ -119,6 +119,46 @@ GET /rest/v1/ai_articles?id=in.(id1,id2,...)&select=id,headline,publication,...
 
 ---
 
+## get_subscriber_by_token
+
+Lightweight alternative to `get_subscriber_feed` for callers that need
+**subscriber identity + topic names only**, not articles. Added 2026-04-21.
+
+**Call:** `POST /rest/v1/rpc/get_subscriber_by_token`
+
+**Params:**
+```json
+{ "p_token": "<feed_token>" }
+```
+
+**Returns:** single JSONB object, or `null` when the token doesn't match an active subscriber.
+
+```json
+{
+  "email": "user@example.com",
+  "frequency": "daily",
+  "timezone": "America/New_York",
+  "topics": [
+    { "slug": "macro", "display_name": "Macro" },
+    { "slug": "semiconductors", "display_name": "Semiconductors" }
+  ]
+}
+```
+
+**Internals:** indexed lookup on `digest_subscribers.feed_token` + one join to
+`user_interests → topics`. Skips the full feed-ranking pipeline that
+`get_subscriber_feed` runs — use this when you don't need the article list.
+
+**Security posture:** `SECURITY DEFINER`, grants `EXECUTE` to `anon` +
+`authenticated`. The feed_token is a session credential; exposure on leak
+is equivalent to `get_subscriber_feed` (both surface `email`).
+
+**Frontend consumers:**
+- `Feed.tsx` — for the header avatar's initial + the "Your Brief" context strip.
+- `ArticleDetail.tsx` — for auto-attaching `email` to Ask-AI click-intent logs.
+
+---
+
 ## Database Tables Referenced
 
 Table schemas live in [`docs/data-model/`](./data-model/README.md) — that is the single source of truth for columns, types, nullability, and FK cascade rules. Do not duplicate schema details in this file; keep it focused on RPC call/response shapes. Relevant tables for the RPCs above:

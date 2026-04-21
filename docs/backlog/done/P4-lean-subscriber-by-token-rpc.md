@@ -1,7 +1,8 @@
 # P4 — Lean subscriber-by-token RPC (stop overfetching `get_subscriber_feed` for email)
 
 **Filed**: 2026-04-21
-**Status**: open
+**Status**: done
+**Closed**: 2026-04-21 (PR #12)
 
 ## Summary
 
@@ -60,3 +61,26 @@ reason they're still shipping.
 
 P4 — internal consistency, page-load hygiene, and a prerequisite for
 cleaner telemetry. Not user-visible.
+
+## Progress log
+
+- **2026-04-21** — Filed during the PR #12 review cycle after the
+  reviewer flagged `getSubscriberFeed`-overfetch on every article-detail
+  page load. Initially deferred to a follow-up PR for scope reasons.
+- **2026-04-21** — Pulled into PR #12 in-session when the user pushed
+  back on the deferral. Completed.
+  - Migration `20260421010000_add_get_subscriber_by_token_rpc.sql`
+    applied (`CREATE OR REPLACE FUNCTION`, additive; grants EXECUTE to
+    anon + authenticated matching `get_subscriber_feed`'s posture).
+  - `getSubscriberByToken(token)` + `SubscriberInfo` type added to
+    `src/app/utils/supabase.ts`.
+  - `Feed.tsx` and `ArticleDetail.tsx` migrated off `getSubscriberFeed`
+    for the subscriber-identity lookup. `useUserFeed` still calls
+    `getSubscriberFeed` for actual article loading — that's correct.
+  - Three debug `console.log` dumps deleted from `getSubscriberFeed` —
+    they were leaking raw article JSON on every page load since PR #9.
+  - `Feed.test.tsx` updated: regression guard now asserts topics
+    resolve via `getSubscriberByToken` (not `getSubscriberFeed`) when
+    feed_token is present.
+  - `docs/supabase-rpc.md` updated with the new RPC's contract.
+  - `npm test` 82/82, `npm run build` clean, `npm run smoke` 10/10.

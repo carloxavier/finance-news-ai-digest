@@ -637,19 +637,44 @@ export async function getSubscriberFeed(token: string, limit: number = 20): Prom
 
   if (!response.ok) return null;
   const data = await response.json();
-  console.log('[getSubscriberFeed] Raw RPC response:', JSON.stringify(data).slice(0, 2000));
   if (data?.error === 'not_found') return null;
 
   // Normalize articles to ensure consistent field names
   if (data?.articles && Array.isArray(data.articles)) {
-    if (data.articles.length > 0) {
-      console.log('[getSubscriberFeed] First raw article keys:', Object.keys(data.articles[0]));
-      console.log('[getSubscriberFeed] First raw article:', JSON.stringify(data.articles[0]).slice(0, 1000));
-    }
     data.articles = data.articles.map((a: Record<string, unknown>) => normalizeArticle(a));
   }
 
   return data;
+}
+
+export interface SubscriberInfo {
+  email: string;
+  frequency: string;
+  timezone: string;
+  topics: Array<{ slug: string; display_name: string }>;
+}
+
+// Lean subscriber lookup by feed_token. Returns identity + topic display
+// names only — no article fetch, no feed-ranking SQL. Use this instead of
+// getSubscriberFeed whenever the caller doesn't need articles. See the
+// RPC definition in
+// supabase/migrations/20260421010000_add_get_subscriber_by_token_rpc.sql.
+export async function getSubscriberByToken(token: string): Promise<SubscriberInfo | null> {
+  try {
+    const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_subscriber_by_token`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ p_token: token }),
+    });
+    if (!response.ok) return null;
+    const data = await response.json();
+    // RPC returns JSONB; PostgREST delivers null when the token has no match.
+    if (!data || typeof data !== 'object' || !('email' in data)) return null;
+    return data as SubscriberInfo;
+  } catch (err) {
+    console.warn('[getSubscriberByToken] fetch error:', err);
+    return null;
+  }
 }
 
 export function formatArticleDate(dateStr: string | null | undefined): string {

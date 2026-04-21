@@ -33,7 +33,14 @@ vi.mock("../../utils/supabase", async () => {
     getUserDigestEmail: vi.fn().mockResolvedValue("you@example.com"),
     getUserInterestTopicNames: vi.fn(),
     getUserTrackedTickers: vi.fn(),
-    getSubscriberFeed: vi.fn(),
+    getSubscriberByToken: vi.fn(),
+    // Still used by useUserFeed for article loading when feed_token is present.
+    // Default to an empty feed so article-loading never blocks the render.
+    getSubscriberFeed: vi.fn().mockResolvedValue({
+      subscriber: { email: "", frequency: "daily" },
+      topics: [],
+      articles: [],
+    }),
     getUserFeed: vi.fn().mockResolvedValue([]),
     getGeneralFeed: vi.fn().mockResolvedValue([]),
     getArticlesByTopicSlugs: vi.fn().mockResolvedValue([]),
@@ -59,7 +66,7 @@ import {
   getUserDigestEmail,
   getUserInterestTopicNames,
   getUserTrackedTickers,
-  getSubscriberFeed,
+  getSubscriberByToken,
 } from "../../utils/supabase";
 import { getFeedToken } from "../../utils/userId";
 
@@ -82,7 +89,7 @@ describe("Feed — context strip data source", () => {
     vi.mocked(getUserDigestEmail).mockClear();
     vi.mocked(getUserInterestTopicNames).mockReset();
     vi.mocked(getUserTrackedTickers).mockReset();
-    vi.mocked(getSubscriberFeed).mockReset();
+    vi.mocked(getSubscriberByToken).mockReset();
   });
 
   it("resolves topic names via user_interests when there is no feed_token", async () => {
@@ -98,23 +105,24 @@ describe("Feed — context strip data source", () => {
     });
     expect(screen.getByText("Macro")).toBeInTheDocument();
     expect(screen.getByText("NVDA")).toBeInTheDocument();
-    expect(getSubscriberFeed).not.toHaveBeenCalled();
+    expect(getSubscriberByToken).not.toHaveBeenCalled();
     // Direct-signup path: email comes from the local-user-id query.
     expect(getUserDigestEmail).toHaveBeenCalledWith("local-user");
   });
 
-  it("resolves topic names from getSubscriberFeed (not local user_id) when a feed_token exists", async () => {
+  it("resolves topic names from getSubscriberByToken (not local user_id) when a feed_token exists", async () => {
     // Regression guard for the "context strip lies to email-link subscribers"
     // bug. The local user_id on this device may not match the subscriber's
     // original user_id, so user_interests must NOT be queried.
     vi.mocked(getFeedToken).mockReturnValue("tok-42");
-    vi.mocked(getSubscriberFeed).mockResolvedValue({
-      subscriber: { email: "sub@example.com", frequency: "daily" },
+    vi.mocked(getSubscriberByToken).mockResolvedValue({
+      email: "sub@example.com",
+      frequency: "daily",
+      timezone: "America/New_York",
       topics: [
         { slug: "macro", display_name: "Macro" },
         { slug: "crypto", display_name: "Crypto" },
       ],
-      articles: [],
     });
 
     renderFeed();

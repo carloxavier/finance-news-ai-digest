@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router";
 import {
   type AiProvider,
-  getSubscriberFeed,
+  getSubscriberByToken,
   getUserDigestEmail,
   formatArticleDate,
   logAiClickIntent,
@@ -55,15 +55,11 @@ export function ArticleDetail() {
     const token = getFeedToken();
     if (token) {
       setHasFeedToken(true);
-      // Use p_limit: 1 to keep the response minimal — we only care about the
-      // embedded subscriber.email, not the article list. A lean
-      // get_subscriber_by_token RPC would be even better; tracked as a P4
-      // follow-up (P4-lean-subscriber-by-token-rpc).
-      getSubscriberFeed(token, 1)
-        .then((feed) => {
-          if (feed?.subscriber?.email) {
-            setSubscriberEmail(feed.subscriber.email);
-            setEmailInput(feed.subscriber.email);
+      getSubscriberByToken(token)
+        .then((sub) => {
+          if (sub?.email) {
+            setSubscriberEmail(sub.email);
+            setEmailInput(sub.email);
           }
         })
         .catch(() => {});
