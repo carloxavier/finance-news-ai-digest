@@ -495,44 +495,47 @@ export async function getUserDigestEmail(userId: string): Promise<string | null>
   }
 }
 
-export async function checkWaitlistStatus(userId: string): Promise<boolean> {
-  try {
-    const response = await fetch(
-      `${SUPABASE_URL}/rest/v1/ai_agent_waitlist?user_id=eq.${userId}&select=id&limit=1`,
-      { headers }
-    );
-    if (!response.ok) return false;
-    const data = await response.json();
-    return data.length > 0;
-  } catch {
-    return false;
-  }
-}
+export type AiProvider = 'grok' | 'gemini' | 'chatgpt' | 'claude';
 
-export async function joinAiAgentWaitlist(
+// Records a click on the "Ask AI about this article" CTA. One row per click —
+// intent is a behavioural signal, and duplicates are wanted for engagement
+// analytics.
+//
+// The underlying `ai_agent_waitlist` table was originally a beta-waitlist
+// capture; pre-2026-04-21 rows have `ai_provider IS NULL`. Rows written here
+// carry the populated `ai_provider` column. See
+// docs/data-model/engagement-tables.md.
+//
+// Fire-and-forget: never throws. A failed log doesn't block the user from
+// reaching the AI.
+export async function logAiClickIntent(
   userId: string,
-  articleId?: string,
-  email?: string
+  articleId: string,
+  provider: AiProvider,
+  email?: string,
 ): Promise<void> {
-  const body: Record<string, string | undefined> = {
+  const body: Record<string, string> = {
     user_id: userId,
+    article_id: articleId,
+    ai_provider: provider,
   };
-  if (articleId) body.article_id = articleId;
   if (email) body.email = email.toLowerCase().trim();
 
-  const response = await fetch(`${SUPABASE_URL}/rest/v1/ai_agent_waitlist`, {
-    method: 'POST',
-    headers: {
-      ...headers,
-      'Prefer': 'return=minimal,resolution=merge-duplicates',
-    },
-    body: JSON.stringify(body),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error('Join waitlist error:', response.status, errorText);
-    throw new Error(`Failed to join waitlist: ${response.status}`);
+  try {
+    const response = await fetch(`${SUPABASE_URL}/rest/v1/ai_agent_waitlist`, {
+      method: 'POST',
+      headers: {
+        ...headers,
+        'Prefer': 'return=minimal',
+      },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.warn('logAiClickIntent failed:', response.status, errorText);
+    }
+  } catch (err) {
+    console.warn('logAiClickIntent error:', err);
   }
 }
 

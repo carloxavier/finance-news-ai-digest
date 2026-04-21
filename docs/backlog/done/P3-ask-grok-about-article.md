@@ -1,7 +1,8 @@
 # P3 — Replace "AI Deep Dive" waitlist with real Grok deep-link + click-intent tracking
 
 **Filed**: 2026-04-21
-**Status**: open
+**Status**: done
+**Closed**: 2026-04-21 (PR #XXX)
 
 ## Summary
 
@@ -127,3 +128,27 @@ Documented in `docs/data-model/engagement-tables.md`.
 
 P3 — ships a dead button as a working feature before we start driving
 strangers to it.
+
+## Progress log
+
+- **2026-04-21** — Work started. Scope per the Target Behavior section
+  above; Grok chosen over Gemini for the chat-agent UX (user call).
+- **2026-04-21** — Schema migration `add_ai_provider_to_ai_agent_waitlist`
+  applied in prod (`ALTER TABLE public.ai_agent_waitlist ADD COLUMN IF
+  NOT EXISTS ai_provider text`) — additive, zero-downtime.
+- **2026-04-21** — Completed.
+  - `src/app/utils/supabase.ts`: dropped `checkWaitlistStatus` and
+    `joinAiAgentWaitlist`; added `logAiClickIntent(userId, articleId,
+    provider, email?)` — fire-and-forget, never throws.
+  - `src/app/components/ArticleDetail.tsx`: rewrote click handler.
+    Subscribers (feed_token in localStorage OR user_id → subscriber row)
+    go straight to Grok with their email auto-logged. Anonymous visitors
+    see the repurposed interstitial modal.
+  - `scripts/smoke-frontend.mjs`: added four new assertions (subscriber
+    path opens grok.com, prompt carries headline + URL, anonymous path
+    shows the interstitial). Smoke stubs the log endpoint to avoid
+    writing real rows on every run.
+  - `docs/data-model/engagement-tables.md`: documented the dual semantics
+    of `ai_agent_waitlist` (legacy waitlist rows vs new click-intent rows
+    distinguished by `ai_provider IS NULL`).
+  - `npm test` 72/72, `npm run build` clean, `npm run smoke` 10/10.
