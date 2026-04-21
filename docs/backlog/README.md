@@ -65,6 +65,7 @@ Don't delete closed tickets — `done/` is the project's institutional memory fo
 ### Open
 
 - [P3 — client-generated user_id is an authZ bypass](./P3-client-generated-user-id-authz.md)
+- [P3 — replace "AI Deep Dive" waitlist with real Grok deep-link](./P3-ask-grok-about-article.md)
 - [P4 — insufficient article freshness in digest](./P4-insufficient-article-freshness-in-digest.md)
 - [P4 — consolidate feed RPCs from four to two](./P4-consolidate-feed-rpcs.md)
 - [P4 — normalize ticker → company name](./P4-normalize-ticker-company-names.md)
