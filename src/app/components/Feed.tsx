@@ -6,7 +6,7 @@ import {
   getUserDigestEmail,
   getUserInterestTopicNames,
   getUserTrackedTickers,
-  getSubscriberFeed,
+  getSubscriberByToken,
   type Article,
   type Topic,
 } from "../utils/supabase";
@@ -60,19 +60,19 @@ export function Feed() {
     // user_id may not match the subscriber's original user_id (different
     // device, cleared storage, incognito). Querying digest_subscribers or
     // user_interests by local user_id would miss the real subscriber row.
-    // Resolve through the feed_token via getSubscriberFeed instead — its
-    // response carries subscriber.email and topics server-side. For direct
-    // signups (no feed_token), the localStorage user_id is authoritative
-    // so we query by user_id.
+    // Resolve through the feed_token via the lean getSubscriberByToken RPC
+    // instead — it returns just subscriber identity + topic names, no
+    // articles. For direct signups (no feed_token), the localStorage
+    // user_id is authoritative so we query by user_id.
     const feedToken = getFeedToken();
     if (feedToken) {
-      getSubscriberFeed(feedToken)
-        .then((feed) => {
-          if (feed) {
-            setEmail(feed.subscriber.email || "");
-            setUserTopicNames(feed.topics.map((t) => t.display_name));
+      getSubscriberByToken(feedToken)
+        .then((sub) => {
+          if (sub) {
+            setEmail(sub.email || "");
+            setUserTopicNames(sub.topics.map((t) => t.display_name));
           }
-          // Subscriber feed does not expose tickers today.
+          // Subscriber RPC does not expose tickers today.
           setUserTickers([]);
         })
         .catch(() => {})

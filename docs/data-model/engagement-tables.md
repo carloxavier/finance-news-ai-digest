@@ -55,17 +55,26 @@ Webhook events from Resend (the transactional email provider). Records delivery,
 
 ## `ai_agent_waitlist`
 
-Signups for the eventual "AI agent" upsell feature. Users click a CTA on the article detail page to join; their intent is recorded here.
+Originally a beta-waitlist capture for a hypothetical in-product "AI agent" feature. On **2026-04-21** the "Ask AI about this article" button was repurposed to deep-link into [Grok](https://grok.com) with the article's content preloaded. The table stays, with an added column, and now serves a dual purpose:
+
+- **Click-intent events** (new, majority of new rows): one row per click on the Ask-AI CTA, recording which provider was used.
+- **Legacy beta-waitlist rows** (historical): pre-2026-04-21 rows where users opted into a beta that never shipped. Distinguishable by `ai_provider IS NULL`.
 
 | Column | Type | Nullable | Default | Purpose |
 |---|---|---|---|---|
 | `id` | uuid | NO | `gen_random_uuid()` | PK |
 | `user_id` | uuid | NO | — | Client-generated user_id (see [P3](../backlog/P3-client-generated-user-id-authz.md)). |
-| `email` | text | YES | — | Optional — populated if the user provides one via the waitlist form. |
-| `article_id` | uuid | YES | — | FK → `ai_articles.id`. **NO ACTION** on delete. The article that triggered the signup is informational context; the user's waitlist intent survives the article being archived or deleted. |
-| `signed_up_at` | timestamptz | YES | `now()` | |
+| `email` | text | YES | — | Optional. For known subscribers (feed_token present or user_id-matched digest_subscriber row), populated automatically at click time. For anonymous visitors, populated if they provide one in the interstitial modal. |
+| `article_id` | uuid | YES | — | FK → `ai_articles.id`. **NO ACTION** on delete. The article context is informational; the user's intent survives the article being archived or deleted. |
+| `signed_up_at` | timestamptz | YES | `now()` | Kept for legacy naming; effectively the click timestamp on new rows. |
+| `ai_provider` | text | YES | — | Provider the user was sent to: `'grok'` today; future values may include `'gemini'`, `'chatgpt'`, `'claude'`. `NULL` on legacy beta-waitlist rows. Added 2026-04-21. |
 
-**Why `NO ACTION` on the article FK**: the user's intent to access the AI agent is independent of the specific article they happened to be reading when they joined the waitlist. Cascading the article delete would discard real user signal. The article_id is retained as historical context — "which story motivated this signup" — and the column goes stale (FK becomes a dangling reference) if the article is ever hard-deleted. This is intentional.
+**Why `NO ACTION` on the article FK**: the user's intent to understand this story is independent of the article's later lifecycle. Cascading the article delete would discard real user signal. The article_id is retained as historical context and goes stale (FK becomes a dangling reference) if the article is ever hard-deleted. Intentional.
 
-**Written by**: `joinAiAgentWaitlist` in `src/app/utils/supabase.ts`, called from the article detail page's CTA.
-**Read by**: the waitlist status check on the same page (`checkWaitlistStatus`) to avoid showing the CTA twice to users who have already joined.
+**No dedupe**: the API inserts one row per click. Multiple clicks on the same article by the same user = multiple rows. The behavioural signal is strongest at per-click granularity and "same user asked again" is information we want to keep.
+
+**Written by**: `logAiClickIntent` in `src/app/utils/supabase.ts`, called from the article detail page's Ask-AI button (fire-and-forget — a log failure never blocks the user's redirect to the AI).
+
+**Read by**: no frontend consumer today. Analytics only.
+
+**Eventual cleanup**: the table name still says "waitlist" while the content is mostly click events. If the mismatch becomes a read-path confusion source, split: new `ai_click_intents` table for the click events, keep `ai_agent_waitlist` for any future actual waitlist. For now we tolerate the overload — schema churn costs more than the ambiguity.

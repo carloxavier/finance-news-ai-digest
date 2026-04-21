@@ -10,6 +10,13 @@
 
 ---
 
+## Which subscriber RPC should I call?
+
+- Need subscriber identity + topic names, no articles? → [`get_subscriber_by_token`](#get_subscriber_by_token). Cheap, O(1) index lookup.
+- Need the full ranked article feed for a subscriber? → [`get_subscriber_feed`](#get_subscriber_feed-primary--used-by-both-web-and-email). Expensive, runs the full feed pipeline.
+
+If you're tempted to call `get_subscriber_feed` just to read `subscriber.email`, stop — that's exactly the overfetch `get_subscriber_by_token` was introduced to replace (PR #12).
+
 ## get_subscriber_feed (PRIMARY — used by both web and email)
 
 This is the **canonical feed RPC**. Both the web app (`Feed.tsx`) and the email digest (`send-digest` Edge Function) must use this RPC. Do not use `get_user_feed` for digest emails — it has different ranking logic and a stale cache.
@@ -116,6 +123,46 @@ GET /rest/v1/ai_articles?id=in.(id1,id2,...)&select=id,headline,publication,...
 **Returns:** `Article[]` (flat array)
 
 **Frontend consumer:** `getUserFeed()` fallback path in `supabase.ts` -> normalized via `normalizeArticle()`
+
+---
+
+## get_subscriber_by_token
+
+Lightweight alternative to `get_subscriber_feed` for callers that need
+**subscriber identity + topic names only**, not articles. Added 2026-04-21.
+
+**Call:** `POST /rest/v1/rpc/get_subscriber_by_token`
+
+**Params:**
+```json
+{ "p_token": "<feed_token>" }
+```
+
+**Returns:** single JSONB object, or `null` when the token doesn't match an active subscriber.
+
+```json
+{
+  "email": "user@example.com",
+  "frequency": "daily",
+  "timezone": "America/New_York",
+  "topics": [
+    { "slug": "macro", "display_name": "Macro" },
+    { "slug": "semiconductors", "display_name": "Semiconductors" }
+  ]
+}
+```
+
+**Internals:** indexed lookup on `digest_subscribers.feed_token` + one join to
+`user_interests → topics`. Skips the full feed-ranking pipeline that
+`get_subscriber_feed` runs — use this when you don't need the article list.
+
+**Security posture:** `SECURITY DEFINER`, grants `EXECUTE` to `anon` +
+`authenticated`. The feed_token is a session credential; exposure on leak
+is equivalent to `get_subscriber_feed` (both surface `email`).
+
+**Frontend consumers:**
+- `Feed.tsx` — for the header avatar's initial + the "Your Brief" context strip.
+- `ArticleDetail.tsx` — for auto-attaching `email` to Ask-AI click-intent logs.
 
 ---
 

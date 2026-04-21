@@ -495,44 +495,47 @@ export async function getUserDigestEmail(userId: string): Promise<string | null>
   }
 }
 
-export async function checkWaitlistStatus(userId: string): Promise<boolean> {
-  try {
-    const response = await fetch(
-      `${SUPABASE_URL}/rest/v1/ai_agent_waitlist?user_id=eq.${userId}&select=id&limit=1`,
-      { headers }
-    );
-    if (!response.ok) return false;
-    const data = await response.json();
-    return data.length > 0;
-  } catch {
-    return false;
-  }
-}
+export type AiProvider = 'grok' | 'gemini' | 'chatgpt' | 'claude';
 
-export async function joinAiAgentWaitlist(
+// Records a click on the "Ask AI about this article" CTA. One row per click —
+// intent is a behavioural signal, and duplicates are wanted for engagement
+// analytics.
+//
+// The underlying `ai_agent_waitlist` table was originally a beta-waitlist
+// capture; pre-2026-04-21 rows have `ai_provider IS NULL`. Rows written here
+// carry the populated `ai_provider` column. See
+// docs/data-model/engagement-tables.md.
+//
+// Fire-and-forget: never throws. A failed log doesn't block the user from
+// reaching the AI.
+export async function logAiClickIntent(
   userId: string,
-  articleId?: string,
-  email?: string
+  articleId: string,
+  provider: AiProvider,
+  email?: string,
 ): Promise<void> {
-  const body: Record<string, string | undefined> = {
+  const body: Record<string, string> = {
     user_id: userId,
+    article_id: articleId,
+    ai_provider: provider,
   };
-  if (articleId) body.article_id = articleId;
   if (email) body.email = email.toLowerCase().trim();
 
-  const response = await fetch(`${SUPABASE_URL}/rest/v1/ai_agent_waitlist`, {
-    method: 'POST',
-    headers: {
-      ...headers,
-      'Prefer': 'return=minimal,resolution=merge-duplicates',
-    },
-    body: JSON.stringify(body),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error('Join waitlist error:', response.status, errorText);
-    throw new Error(`Failed to join waitlist: ${response.status}`);
+  try {
+    const response = await fetch(`${SUPABASE_URL}/rest/v1/ai_agent_waitlist`, {
+      method: 'POST',
+      headers: {
+        ...headers,
+        'Prefer': 'return=minimal',
+      },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.warn('logAiClickIntent failed:', response.status, errorText);
+    }
+  } catch (err) {
+    console.warn('logAiClickIntent error:', err);
   }
 }
 
@@ -625,6 +628,21 @@ function normalizeArticle(raw: Record<string, unknown>): Article {
   return article;
 }
 
+/**
+ * Full subscriber feed — identity, topics, AND a ranked list of articles.
+ *
+ * **Expensive.** Runs the feed-ranking SQL pipeline (joins
+ * `user_interests → article_topics → ai_articles`, filters by
+ * `published_at`, sorts, limits, normalizes each article). Use only when
+ * you need the article list.
+ *
+ * If you only need the subscriber's identity + topic names (e.g. for an
+ * avatar initial or a context strip), call `getSubscriberByToken` instead.
+ * It's an O(1) index lookup with no article work.
+ *
+ * Current callers that still need articles: `useUserFeed` (web feed on
+ * `/feed` when `feed_token` is present) and `send-digest` (email body).
+ */
 export async function getSubscriberFeed(token: string, limit: number = 20): Promise<SubscriberFeed | null> {
   const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_subscriber_feed`, {
     method: 'POST',
@@ -634,19 +652,44 @@ export async function getSubscriberFeed(token: string, limit: number = 20): Prom
 
   if (!response.ok) return null;
   const data = await response.json();
-  console.log('[getSubscriberFeed] Raw RPC response:', JSON.stringify(data).slice(0, 2000));
   if (data?.error === 'not_found') return null;
 
   // Normalize articles to ensure consistent field names
   if (data?.articles && Array.isArray(data.articles)) {
-    if (data.articles.length > 0) {
-      console.log('[getSubscriberFeed] First raw article keys:', Object.keys(data.articles[0]));
-      console.log('[getSubscriberFeed] First raw article:', JSON.stringify(data.articles[0]).slice(0, 1000));
-    }
     data.articles = data.articles.map((a: Record<string, unknown>) => normalizeArticle(a));
   }
 
   return data;
+}
+
+export interface SubscriberInfo {
+  email: string;
+  frequency: string;
+  timezone: string;
+  topics: Array<{ slug: string; display_name: string }>;
+}
+
+// Lean subscriber lookup by feed_token. Returns identity + topic display
+// names only — no article fetch, no feed-ranking SQL. Use this instead of
+// getSubscriberFeed whenever the caller doesn't need articles. See the
+// RPC definition in
+// supabase/migrations/20260421010000_add_get_subscriber_by_token_rpc.sql.
+export async function getSubscriberByToken(token: string): Promise<SubscriberInfo | null> {
+  try {
+    const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_subscriber_by_token`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ p_token: token }),
+    });
+    if (!response.ok) return null;
+    const data = await response.json();
+    // RPC returns JSONB; PostgREST delivers null when the token has no match.
+    if (!data || typeof data !== 'object' || !('email' in data)) return null;
+    return data as SubscriberInfo;
+  } catch (err) {
+    console.warn('[getSubscriberByToken] fetch error:', err);
+    return null;
+  }
 }
 
 export function formatArticleDate(dateStr: string | null | undefined): string {

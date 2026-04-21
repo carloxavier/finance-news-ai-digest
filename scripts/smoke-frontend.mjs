@@ -113,6 +113,51 @@ try {
     record("landing (/): page loads", hasLandingCopy, `title="${title}"`);
     await ctx.close();
   }
+
+  // Test 4: Ask-AI button on article+token flow opens Grok in a new tab.
+  // Stubs the click-intent log endpoint so we don't write a real row into
+  // the `ai_agent_waitlist` table every time the smoke runs.
+  {
+    const ctx = await browser.newContext();
+    const page = await ctx.newPage();
+    await ctx.route("**/rest/v1/ai_agent_waitlist**", (route) =>
+      route.fulfill({ status: 201, body: "" }),
+    );
+    await page.goto(`${BASE}/article/${ARTICLE_ID}?t=${FEED_TOKEN}`);
+    await page.waitForSelector('button:has-text("Ask AI about this article")', { timeout: 10000 });
+
+    const [popup] = await Promise.all([
+      page.waitForEvent("popup", { timeout: 5000 }),
+      page.click('button:has-text("Ask AI about this article")'),
+    ]);
+    const popupUrl = popup.url();
+    await popup.close();
+
+    const isGrok = popupUrl.startsWith("https://grok.com/?q=");
+    const prompt = decodeURIComponent(popupUrl.split("?q=")[1] ?? "");
+    const hasHeadlineInPrompt = prompt.includes(ARTICLE_HEADLINE_FRAGMENT);
+    const hasArticleUrlInPrompt = prompt.includes(`/article/${ARTICLE_ID}`);
+    record("Ask-AI (subscriber): opens grok.com", isGrok, `host=${new URL(popupUrl).host}`);
+    record("Ask-AI (subscriber): prompt carries article headline", !!hasHeadlineInPrompt);
+    record("Ask-AI (subscriber): prompt carries article URL", !!hasArticleUrlInPrompt);
+    await ctx.close();
+  }
+
+  // Test 5: Ask-AI button without feed_token shows the interstitial modal.
+  {
+    const ctx = await browser.newContext();
+    const page = await ctx.newPage();
+    await ctx.route("**/rest/v1/ai_agent_waitlist**", (route) =>
+      route.fulfill({ status: 201, body: "" }),
+    );
+    await page.goto(`${BASE}/article/${ARTICLE_ID}`);
+    await page.waitForSelector('button:has-text("Ask AI about this article")', { timeout: 10000 });
+    await page.click('button:has-text("Ask AI about this article")');
+    // Modal: look for the "Continue to Grok" CTA text.
+    const modalVisible = await page.waitForSelector("text=Continue to Grok", { timeout: 3000 }).then(() => true).catch(() => false);
+    record("Ask-AI (anonymous): interstitial modal opens", modalVisible);
+    await ctx.close();
+  }
 } finally {
   await browser.close();
 }

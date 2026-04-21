@@ -1,6 +1,12 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router";
-import { checkWaitlistStatus, joinAiAgentWaitlist, getUserDigestEmail, formatArticleDate } from "../utils/supabase";
+import {
+  type AiProvider,
+  getSubscriberByToken,
+  getUserDigestEmail,
+  formatArticleDate,
+  logAiClickIntent,
+} from "../utils/supabase";
 import { useArticleDetail } from "../hooks/useArticleDetail";
 import { ArrowLeft, ExternalLink, AlertTriangle, Sparkles } from "lucide-react";
 import { AnalystDataSection } from "./AnalystDataSection";
@@ -12,7 +18,10 @@ import {
   DialogDescription,
   DialogFooter,
 } from "./ui/dialog";
-import { getUserId, setFeedToken, setOnboardingComplete } from "../utils/userId";
+import { getUserId, getFeedToken, setFeedToken, setOnboardingComplete } from "../utils/userId";
+import { buildGrokUrl } from "../utils/grokUrl";
+
+const AI_PROVIDER: AiProvider = "grok";
 
 export function ArticleDetail() {
   const { id } = useParams<{ id: string }>();
@@ -21,10 +30,12 @@ export function ArticleDetail() {
   const { article, loading } = useArticleDetail(id);
   const [showAiModal, setShowAiModal] = useState(false);
   const [emailInput, setEmailInput] = useState("");
-  const [digestEmail, setDigestEmail] = useState<string | null>(null);
-  const [alreadyOnWaitlist, setAlreadyOnWaitlist] = useState(false);
-  const [joinSuccess, setJoinSuccess] = useState(false);
-  const [joining, setJoining] = useState(false);
+  // Subscriber email, resolved via feed_token when present, else looked up by
+  // user_id. Used to auto-attach to click-intent logs and to skip the
+  // interstitial for known subscribers.
+  const [subscriberEmail, setSubscriberEmail] = useState<string | null>(null);
+  const [hasFeedToken, setHasFeedToken] = useState(false);
+  const [submittingAi, setSubmittingAi] = useState(false);
 
   // If arriving from an email link with a feed token, store it so the user
   // can navigate to their feed without going through onboarding again.
@@ -36,13 +47,30 @@ export function ArticleDetail() {
     }
   }, [searchParams]);
 
+  // Resolve the viewer's email so the Ask-AI click logs it and, if they're
+  // a known subscriber, we can skip the interstitial. Mirrors the email-
+  // resolution pattern in Feed.tsx: feed_token is authoritative; fall back
+  // to user_id lookup for landing-only subscribers on the same device.
   useEffect(() => {
-    const userId = getUserId();
-    checkWaitlistStatus(userId).then(setAlreadyOnWaitlist);
-    getUserDigestEmail(userId).then((email) => {
-      setDigestEmail(email);
-      if (email) setEmailInput(email);
-    });
+    const token = getFeedToken();
+    if (token) {
+      setHasFeedToken(true);
+      getSubscriberByToken(token)
+        .then((sub) => {
+          if (sub?.email) {
+            setSubscriberEmail(sub.email);
+            setEmailInput(sub.email);
+          }
+        })
+        .catch(() => {});
+    } else {
+      getUserDigestEmail(getUserId()).then((email) => {
+        if (email) {
+          setSubscriberEmail(email);
+          setEmailInput(email);
+        }
+      });
+    }
   }, []);
 
   if (loading) {
@@ -84,17 +112,32 @@ export function ArticleDetail() {
     });
   };
 
-  const handleJoinWaitlist = async () => {
-    setJoining(true);
+  const openAi = (email?: string) => {
+    if (!article || !id) return;
+    const url = buildGrokUrl(article.headline, id);
+    // Fire-and-forget log; don't block the redirect.
+    void logAiClickIntent(getUserId(), id, AI_PROVIDER, email);
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
+
+  // Entry point from the Ask-AI button. Known subscribers go straight through;
+  // anonymous visitors see an interstitial that captures an optional email.
+  const handleAskAi = () => {
+    if (hasFeedToken) {
+      openAi(subscriberEmail ?? undefined);
+    } else {
+      setShowAiModal(true);
+    }
+  };
+
+  const handleContinueToAi = () => {
+    setSubmittingAi(true);
     try {
       const email = emailInput.trim() || undefined;
-      await joinAiAgentWaitlist(getUserId(), id, email);
-      setJoinSuccess(true);
-      setAlreadyOnWaitlist(true);
-    } catch (error) {
-      console.error("Failed to join waitlist:", error);
+      openAi(email);
+      setShowAiModal(false);
     } finally {
-      setJoining(false);
+      setSubmittingAi(false);
     }
   };
 
@@ -302,7 +345,7 @@ export function ArticleDetail() {
         <div className="bg-gradient-to-t from-[var(--navy-bg)] via-[var(--navy-bg)] to-transparent pt-8 pb-4 px-6">
           <div className="max-w-4xl mx-auto">
             <button
-              onClick={() => setShowAiModal(true)}
+              onClick={handleAskAi}
               className="w-full flex items-center justify-center gap-3 px-6 py-3.5 bg-[var(--layer1-blue)] hover:bg-[var(--layer1-blue)]/90 text-white rounded-xl transition-all text-base font-medium"
             >
               <Sparkles className="w-5 h-5" />
@@ -312,7 +355,8 @@ export function ArticleDetail() {
         </div>
       </div>
 
-      {/* AI Agent Waitlist Modal */}
+      {/* Ask-AI interstitial — shown for anonymous visitors (no feed_token).
+          Subscribers arriving via email skip this and go straight to Grok. */}
       <Dialog open={showAiModal} onOpenChange={setShowAiModal}>
         <DialogContent className="bg-[var(--navy-bg)] border-white/20 text-white sm:max-w-md">
           <DialogHeader>
@@ -320,71 +364,45 @@ export function ArticleDetail() {
               className="text-2xl text-white"
               style={{ fontFamily: "var(--font-headline)" }}
             >
-              {joinSuccess ? "You're on the list!" : "AI Deep Dive"}
+              Ask AI about this article
             </DialogTitle>
             <DialogDescription className="text-white/60 text-base">
-              {joinSuccess
-                ? "We'll notify you as soon as AI Deep Dive is ready. You'll be among the first to try it."
-                : alreadyOnWaitlist
-                  ? "You're already on the waitlist! We'll notify you when AI Deep Dive is ready."
-                  : "Ask follow-up questions, explore implications, and understand how events connect — all powered by AI. This feature is currently in closed beta."}
+              This opens a new tab with Grok, preloaded with the article's headline and link for a quick AI explanation. Leave your email (optional) if you'd like Finnopolis product updates.
             </DialogDescription>
           </DialogHeader>
 
-          {/* Email section — only shown when not yet joined */}
-          {!joinSuccess && !alreadyOnWaitlist && (
-            <div className="py-2">
-              {digestEmail ? (
-                <p className="text-white/70 text-sm">
-                  We'll notify you at <span className="text-white font-medium">{digestEmail}</span> when ready.
-                </p>
-              ) : (
-                <>
-                  <p className="text-white/70 text-sm mb-3">
-                    We'll notify you by email when ready.
-                  </p>
-                  <input
-                    type="email"
-                    value={emailInput}
-                    onChange={(e) => setEmailInput(e.target.value)}
-                    placeholder="you@example.com (optional)"
-                    className="w-full px-4 py-3 rounded-lg bg-white/5 border border-white/20 text-white placeholder-white/30 focus:outline-none focus:border-[var(--layer1-blue)] transition-colors"
-                  />
-                </>
-              )}
-            </div>
-          )}
+          <div className="py-2">
+            <input
+              type="email"
+              value={emailInput}
+              onChange={(e) => setEmailInput(e.target.value)}
+              placeholder="you@example.com (optional)"
+              className="w-full px-4 py-3 rounded-lg bg-white/5 border border-white/20 text-white placeholder-white/30 focus:outline-none focus:border-[var(--layer1-blue)] transition-colors"
+            />
+            <p className="text-xs text-white/40 mt-2 leading-relaxed">
+              We log this click to improve the feature. Your email, if provided, is stored on our side and never shared with Grok.
+            </p>
+          </div>
 
           <DialogFooter className="flex gap-3 sm:flex-row">
-            {joinSuccess || alreadyOnWaitlist ? (
-              <button
-                onClick={() => setShowAiModal(false)}
-                className="w-full px-6 py-3 bg-[var(--layer1-blue)] hover:bg-[var(--layer1-blue)]/90 text-white rounded-lg transition-all font-medium"
-              >
-                Got it
-              </button>
-            ) : (
-              <>
-                <button
-                  onClick={() => setShowAiModal(false)}
-                  className="flex-1 px-6 py-3 border border-white/20 text-white/60 hover:text-white hover:border-white/40 rounded-lg transition-all"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleJoinWaitlist}
-                  disabled={joining}
-                  className={`flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-lg transition-all font-medium ${
-                    !joining
-                      ? "bg-[var(--layer1-blue)] hover:bg-[var(--layer1-blue)]/90 text-white"
-                      : "bg-white/10 text-white/30 cursor-not-allowed"
-                  }`}
-                >
-                  <Sparkles className="w-4 h-4" />
-                  {joining ? "Joining..." : "I'm in"}
-                </button>
-              </>
-            )}
+            <button
+              onClick={() => setShowAiModal(false)}
+              className="flex-1 px-6 py-3 border border-white/20 text-white/60 hover:text-white hover:border-white/40 rounded-lg transition-all"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleContinueToAi}
+              disabled={submittingAi}
+              className={`flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-lg transition-all font-medium ${
+                !submittingAi
+                  ? "bg-[var(--layer1-blue)] hover:bg-[var(--layer1-blue)]/90 text-white"
+                  : "bg-white/10 text-white/30 cursor-not-allowed"
+              }`}
+            >
+              <Sparkles className="w-4 h-4" />
+              Continue to Grok &#8594;
+            </button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
