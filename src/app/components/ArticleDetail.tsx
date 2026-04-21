@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router";
 import {
+  type AiProvider,
   getSubscriberFeed,
   getUserDigestEmail,
   formatArticleDate,
@@ -18,19 +19,9 @@ import {
   DialogFooter,
 } from "./ui/dialog";
 import { getUserId, getFeedToken, setFeedToken, setOnboardingComplete } from "../utils/userId";
+import { buildGrokUrl } from "../utils/grokUrl";
 
-const AI_PROVIDER = "grok" as const;
-
-function buildGrokUrl(headline: string, articleId: string): string {
-  const prompt = [
-    "Explain this finance news article for a retail investor in 3 short points:",
-    "(1) core takeaway, (2) tickers/sectors affected, (3) what to watch next.",
-    "",
-    `Headline: "${headline}"`,
-    `URL: https://finnopolis.com/article/${articleId}`,
-  ].join("\n");
-  return `https://grok.com/?q=${encodeURIComponent(prompt)}`;
-}
+const AI_PROVIDER: AiProvider = "grok";
 
 export function ArticleDetail() {
   const { id } = useParams<{ id: string }>();
@@ -64,7 +55,11 @@ export function ArticleDetail() {
     const token = getFeedToken();
     if (token) {
       setHasFeedToken(true);
-      getSubscriberFeed(token)
+      // Use p_limit: 1 to keep the response minimal — we only care about the
+      // embedded subscriber.email, not the article list. A lean
+      // get_subscriber_by_token RPC would be even better; tracked as a P4
+      // follow-up (P4-lean-subscriber-by-token-rpc).
+      getSubscriberFeed(token, 1)
         .then((feed) => {
           if (feed?.subscriber?.email) {
             setSubscriberEmail(feed.subscriber.email);
@@ -376,7 +371,7 @@ export function ArticleDetail() {
               Ask AI about this article
             </DialogTitle>
             <DialogDescription className="text-white/60 text-base">
-              This opens a new tab with Grok, preloaded with the article's headline and link for a quick AI explanation. Your email is optional — leave it if you'd like us to notify you when Finnopolis ships its own AI Deep Dive.
+              This opens a new tab with Grok, preloaded with the article's headline and link for a quick AI explanation. Leave your email (optional) if you'd like Finnopolis product updates.
             </DialogDescription>
           </DialogHeader>
 
@@ -388,6 +383,9 @@ export function ArticleDetail() {
               placeholder="you@example.com (optional)"
               className="w-full px-4 py-3 rounded-lg bg-white/5 border border-white/20 text-white placeholder-white/30 focus:outline-none focus:border-[var(--layer1-blue)] transition-colors"
             />
+            <p className="text-xs text-white/40 mt-2 leading-relaxed">
+              We log this click to improve the feature. Your email, if provided, is stored on our side and never shared with Grok.
+            </p>
           </div>
 
           <DialogFooter className="flex gap-3 sm:flex-row">

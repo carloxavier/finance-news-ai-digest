@@ -66,6 +66,7 @@ Don't delete closed tickets — `done/` is the project's institutional memory fo
 
 - [P3 — client-generated user_id is an authZ bypass](./P3-client-generated-user-id-authz.md)
 - [P4 — insufficient article freshness in digest](./P4-insufficient-article-freshness-in-digest.md)
+- [P4 — lean subscriber-by-token RPC](./P4-lean-subscriber-by-token-rpc.md)
 - [P4 — consolidate feed RPCs from four to two](./P4-consolidate-feed-rpcs.md)
 - [P4 — normalize ticker → company name](./P4-normalize-ticker-company-names.md)
 - [P4 — stop rendering single-publication name](./P4-stop-rendering-single-publication-name.md)
