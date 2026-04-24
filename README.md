@@ -1,9 +1,8 @@
 # Financial News Feed App
 
 Vite + React + TypeScript frontend backed by Supabase (Postgres, Edge
-Functions, pg_cron) and Resend for email delivery. The original Figma
-design lives at
-https://www.figma.com/design/5GrMkeIq9GvsiJn29xhiY2/Financial-News-Feed-App.
+Functions, pg_cron) and Resend for email delivery. The design was done using Figma
+Make and then we moved to using Claude Design.
 
 ## Running the code
 
