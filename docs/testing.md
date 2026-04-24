@@ -96,6 +96,8 @@ Keep the smoke set small. Every check pays ongoing maintenance cost as fixtures 
 
 Edge Functions run on Deno and can't be imported into Vitest. The compromise: for each Edge Function with non-trivial branches, re-implement the critical logic in a `.test.ts` file with mocked `supabase-js` clients. This is what `src/app/__tests__/digest-subscriber-flow.test.ts` does for `send-digest`'s `getSubscriberArticles`.
 
+> **Deprecated for `send-digest`**: the existing `digest-subscriber-flow.test.ts` covers pre-v13 behaviour (hardcoded `p_limit: 8`, no dedup). Current dedup/selection logic is covered by the colocated `supabase/functions/send-digest/selection.test.ts`; the frontend contract test will be removed once nothing else depends on its shape. See the colocated-tests pattern below.
+
 These tests are **contract** tests — they validate the *specified behaviour* rather than the actual deployed code. That means:
 
 - If you change the Edge Function, you must update the contract test. Drift is a real risk.
@@ -123,3 +125,19 @@ These are not in the current strategy — not because they're bad, but because w
 - **Load testing.** ~14 subscribers. Not a load problem.
 
 If you add a test layer beyond the three above, update this doc so future contributors (and Claude sessions) understand the intent.
+
+## Edge Function unit tests (colocated)
+
+Beginning with `send-digest` v14, Edge Functions with non-trivial pure logic extract that logic into a sibling file (e.g. `selection.ts`) and colocate a Vitest test file next to it (e.g. `selection.test.ts`).
+
+Why next to the function rather than under `src/app/__tests__/`:
+
+- The tests are *about* the Edge Function, not the frontend.
+- `pre-deploy-check.sh <name>` can scope its run to the relevant folder.
+- Drift between the handler and the tests is visually obvious in PRs — both files move together.
+
+The earlier `src/app/__tests__/digest-subscriber-flow.test.ts` pattern (re-implementing the Deno handler in Node) remains valid for handlers where the entire branching logic is I/O-bound and can't be meaningfully factored out. For `send-digest`, the dedup/selection logic was pure enough to extract, so the new pattern is the preferred one going forward.
+
+**Rule of thumb**: if an Edge Function contains a function that doesn't call Supabase, Resend, or any network, pull it into a sibling file and test it colocated. If the whole function is glue, use the contract-test pattern under `src/app/__tests__/`.
+
+The same `pre-deploy-check.sh <fn>` invocation also runs in `.github/workflows/deploy-edge-functions.yml` before each deploy, so failing tests block the deploy by construction.

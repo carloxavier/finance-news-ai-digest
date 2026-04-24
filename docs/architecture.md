@@ -112,7 +112,7 @@
 
 `send-digest` runs on an hourly cron. Each invocation calls `get_digest_recipients(target_hour)` which returns only the subscribers whose local-time delivery hour matches `target_hour` (default: the current UTC hour). This means the cron fires ~24 times per UTC day, but any individual subscriber is contacted at most once per day (based on their stored timezone).
 
-See [`user-tables.md`](./data-model/user-tables.md) for the `timezone` column and [`engagement-tables.md`](./data-model/engagement-tables.md) for the `last_sent_at` guard that prevents double-sends within the same day.
+See [`user-tables.md`](./data-model/user-tables.md) for the `timezone` column. Double-sends within a day are prevented by `get_digest_recipients(target_hour)`: each subscriber's timezone-local delivery hour matches only one of the 24 hourly cron invocations. `last_sent_at` is updated after every send for analytics/observability but does not gate delivery.
 
 ## Data Flow: Email → App (Critical Path)
 
@@ -128,7 +128,7 @@ This is the most important flow to understand. Every link in a digest email goes
 
 - **Feed token is the subscriber identity**: `feed_token` is per-subscriber, stable, and NOT NULL at the schema level. The email URL carries it directly. `track-click` uses it to identify the subscriber for click logging; the redirect includes it so the frontend can load the personalized feed.
 - **Article IDs are public**: `article_id` travels in the URL in the clear. That's fine — it's the same identifier that appears in `/article/:id` URLs throughout the app.
-- **Both RPCs must return the same articles**: `send-digest` and the web feed must use `get_subscriber_feed` so the email articles match the web feed. Never use a different RPC for the digest.
+- **Single RPC, digest is a subset**: `get_subscriber_feed` is the single source of article selection for both the web feed and the digest email. The digest additionally filters against `digest_sent_articles` post-RPC (14-day dedup window, see `send-digest` v13), so the digest is a strict subset of the web feed — newly-novel articles only. The RPC itself must never be modified to apply the dedup; that filter is digest-email-only.
 
 > **Historical note**: the email URL previously used a rotating per-(subscriber × article) `click_token` instead of `article_id` + `feed_token`. That design was replaced because the `(subscriber_id, article_id)` unique upsert in `send-digest` rotated the token on every re-send, silently breaking older emails. The `digest_sent_articles.click_token` column still exists but is no longer populated. See [P3 — simplify email-link tokens](./backlog/done/P3-simplify-email-link-tokens.md).
 

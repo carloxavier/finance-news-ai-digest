@@ -62,25 +62,46 @@ All functions use `verify_jwt=false` (they are public endpoints used in email li
 
 ---
 
-## Deploying
+## Pre-deploy gate
 
-Deploy via Supabase MCP:
+Before deploying any Edge Function, run:
 
-```
-mcp deploy_edge_function(
-  project_id: "kamfamwjswkncftsdgxi",
-  name: "<function-name>",
-  entrypoint_path: "index.ts",
-  verify_jwt: false,
-  files: [{ name: "index.ts", content: "<file contents>" }]
-)
+```bash
+./scripts/pre-deploy-check.sh send-digest   # or the function you're about to deploy
 ```
 
-Or via CLI (requires `supabase login`):
+This runs the tests colocated with that function. Non-zero exit code means DO NOT deploy. The GitHub Actions pipeline will catch anything that slips past, but locally verifying saves a round trip.
+
+If no tests exist for the function (e.g. `handle-unsubscribe` doesn't have a test file), the script prints a warning and exits 0. Add tests for non-trivial Edge Functions as they grow.
+
+---
+
+## Deployment
+
+Merging to `main` automatically deploys any Edge Function folder that changed in the merge (`.github/workflows/deploy-edge-functions.yml`). The workflow runs `./scripts/pre-deploy-check.sh <function>` first, so failing tests block the deploy. The matrix is built from changed folders under `supabase/functions/`, so unchanged functions are not redeployed.
+
+Changes to `supabase/functions/_shared/**` fan out: both `send-digest` and `send-welcome` redeploy when the shared email module changes. The fan-out map lives at the top of the workflow (`SHARED_CONSUMERS`) — update it if another function starts importing from `_shared`.
+
+### Manual deploy (no code change)
+
+Actions tab → **Deploy Edge Functions** → **Run workflow**. Pick a function name (or leave as `all`) and optionally fill in `ref` to deploy a specific commit SHA.
+
+### Rollback
+
+Edge Functions don't have native version rollback — each deploy clobbers the previous. Two flows:
+
+1. **Normal**: `git revert <bad-commit>` → PR → merge. The revert lands, the workflow fires, the previous code redeploys.
+2. **Emergency**: Actions → **Deploy Edge Functions** → **Run workflow**, fill in `ref` with a known-good commit SHA. The workflow checks out that SHA and redeploys from it.
+
+### Break-glass: manual CLI deploy
+
+When CI is broken and you need to ship a fix, the Supabase CLI still works (requires `supabase login`):
 
 ```bash
 supabase functions deploy <function-name> --project-ref kamfamwjswkncftsdgxi
 ```
+
+The Supabase MCP `deploy_edge_function` tool also still works but is **not** the preferred path — it skips the pre-deploy test gate and leaves no audit trail. Prefer the GitHub Actions workflow so there's a single record of what shipped when.
 
 ---
 

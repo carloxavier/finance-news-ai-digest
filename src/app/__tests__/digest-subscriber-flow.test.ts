@@ -1,12 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 /**
- * These tests verify the digest email flow handles ALL subscriber types,
- * including those who signed up from the landing page without completing
- * onboarding (no feed_token, no user_interests).
+ * DEPRECATED (covers pre-v13 behaviour).
  *
- * The actual getSubscriberArticles lives in a Deno edge function, so we
- * re-implement the logic here with mocks to verify the contract.
+ * These tests re-implement the Deno `send-digest` handler's
+ * `getSubscriberArticles` with a hardcoded `p_limit: 8` and no dedup —
+ * the shape of the function before v13 (2026-04-24). Current behaviour
+ * (30-article candidate pool + 14-day dedup + floor skip) is covered by
+ * the colocated Vitest file at
+ * `supabase/functions/send-digest/selection.test.ts`, which tests the
+ * pure selection logic that was extracted from this handler.
+ *
+ * Kept here for now because it still validates the fallback-vs-RPC
+ * branching in `getSubscriberArticles`. Remove once we have a sibling
+ * test for the fetch branch under `supabase/functions/send-digest/`.
  */
 
 // --- Mock types matching the edge function ---

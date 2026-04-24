@@ -34,6 +34,8 @@ One row per (subscriber, article) pair included in a digest email. The authorita
 
 **Unique constraint**: `(subscriber_id, article_id)` — a given subscriber should not receive the same article twice. `send-digest` uses `upsert` with `onConflict="subscriber_id,article_id"` and `ignoreDuplicates: false` so re-sends keep `sent_at` and `digest_batch` reflecting the most recent delivery.
 
+As of `send-digest` v13, the 14-day dedup window in `send-digest` means re-writes of the same `(subscriber_id, article_id)` row only occur when a novel article from 14+ days ago resurfaces in the subscriber's RPC output. In practice this is uncommon because the RPC has a 30-day recency window, giving roughly a 14-day interval in which the same article can legitimately re-appear on a re-send.
+
 **Cleanup**: the `archive-digest-sent` cron job (daily @ 04:00 UTC) hard-deletes rows older than 90 days. Despite its name, this is a DELETE, not an archive (no archive table exists for this data) — see [P5 — Rename misleading cron job archive-digest-sent](../backlog/P5-rename-archive-digest-sent-cron.md). Historical clicks are preserved via the `SET NULL` rule on `article_clicks.sent_article_id` — deleting a digest-sent record does not orphan the clicks.
 
 ## `email_events`

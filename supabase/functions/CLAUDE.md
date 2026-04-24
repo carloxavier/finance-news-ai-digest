@@ -34,6 +34,20 @@ digest (e.g. the header renders differently with/without a subheader).
 
 ### Deploying
 
-Both are deployed via the Supabase MCP or CLI (`supabase functions
-deploy send-welcome`). The frontend pipeline has no effect on these —
-they ship separately. The git source of truth is this directory.
+Merges to `main` trigger an automatic deploy via
+`.github/workflows/deploy-edge-functions.yml`. Changes to folders under
+this directory ship on merge; there is no separate step. Changes to
+`_shared/` fan out to every consumer (currently `send-digest` and
+`send-welcome`).
+
+For one-off deploys without a code change, or for rolling back to a
+prior commit, use the "Deploy Edge Functions" workflow in the Actions
+tab (`workflow_dispatch`) — see `docs/deploy-edge-functions.md`.
+
+Do **not** deploy from a Claude session via the Supabase MCP
+`deploy_edge_function` tool. It bypasses the pre-deploy test gate and
+leaves no audit trail. The MCP path and direct `supabase functions
+deploy` remain available as break-glass when GitHub Actions is down,
+but they should not be the first choice.
+
+The git source of truth is this directory.
