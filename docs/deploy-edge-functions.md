@@ -2,7 +2,9 @@
 
 ## Overview
 
-Edge Functions are deployed via **Supabase MCP** (the `deploy_edge_function` tool). The local files in `supabase/functions/` are the source of truth.
+Edge Functions deploy automatically via GitHub Actions (`.github/workflows/deploy-edge-functions.yml`) on merge to `main`. Only functions whose folders changed are redeployed; see the Deployment section below. The local files in `supabase/functions/` are the source of truth.
+
+Direct MCP and CLI deploys remain available as break-glass paths.
 
 All functions use `verify_jwt=false` (they are public endpoints used in email links and webhooks).
 
@@ -36,7 +38,7 @@ All functions use `verify_jwt=false` (they are public endpoints used in email li
 
 **Required secret:** `RESEND_API_KEY`
 
-**Article source:** Uses `get_subscriber_feed` RPC with `p_limit: 8`. This is the same RPC the web feed uses, ensuring email and web show the same articles.
+**Article source:** Uses `get_subscriber_feed` RPC with `p_limit: CANDIDATE_POOL_SIZE` (30). The digest fetches a larger pool than the final `DIGEST_TARGET_SIZE` (8) so the dedup step in `selection.ts` can filter already-sent articles without starving the email. The RPC is the same one the web feed uses; the digest is a strict subset of the web feed after dedup filtering.
 
 **Email link pattern:**
 1. Each article card links to `<SUPABASE_URL>/functions/v1/track-click?a=<article_id>&t=<feed_token>`
