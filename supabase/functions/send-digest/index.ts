@@ -1,7 +1,11 @@
 // send-digest Edge Function
-// Triggered by pg_cron at 07:00 UTC daily
+// Triggered by pg_cron hourly at the top of the hour (timezone-aware via RPC).
 // Required secret: RESEND_API_KEY
 // Deployed via Supabase MCP — this file is the local source of truth.
+//
+// v13 adds per-subscriber dedup against `digest_sent_articles` with a
+// `DEDUP_WINDOW_DAYS` window. Pure selection logic lives in `./selection.ts`.
+// The RPC `get_subscriber_feed` and the web feed are UNCHANGED.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import {
@@ -13,11 +17,18 @@ import {
   signalBg,
   signalColor,
 } from "../_shared/email.ts";
+import { selectArticlesForDigest, type Article } from "./selection.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 const TRACK_CLICK_URL = `${SUPABASE_URL}/functions/v1/track-click`;
+
+// Digest-only dedup tuning. These do NOT affect the web feed.
+const DEDUP_WINDOW_DAYS = 14;
+const CANDIDATE_POOL_SIZE = 30;
+const DIGEST_TARGET_SIZE = 8;
+const DIGEST_MIN_FLOOR = 3;
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -29,17 +40,6 @@ interface Subscriber {
   unsubscribe_token: string;
   feed_token: string | null;
   timezone: string;
-}
-
-interface Article {
-  id: string;
-  headline: string;
-  publication: string;
-  published_at: string;
-  ai_preview: string;
-  consensus_signal: string;
-  extracted_tickers: string[];
-  inference_watch: string[];
 }
 
 // ─── Main handler ────────────────────────────────────────────────────
@@ -92,6 +92,7 @@ Deno.serve(async (req: Request) => {
     console.log(`Found ${subscribers.length} subscriber(s) due for digest (hour=${targetHour})`);
 
     let sent = 0;
+    let skipped = 0;
     let failed = 0;
     const errors: string[] = [];
 
@@ -101,12 +102,54 @@ Deno.serve(async (req: Request) => {
     // 2. Process each subscriber
     for (const sub of subscribers) {
       try {
-        // Get their personalized feed (newest 8 articles, same source as the web feed)
-        const articles = await getSubscriberArticles(supabase, sub.feed_token);
+        // Fetch a candidate pool (larger than target) so dedup has room to
+        // filter duplicates without starving the digest.
+        const candidates = await getSubscriberArticles(supabase, sub.feed_token);
 
-        if (articles.length === 0) {
+        if (candidates.length === 0) {
           console.log(`No articles for ${sub.email}, skipping`);
+          skipped++;
           continue;
+        }
+
+        // Fetch the set of (subscriber_id, article_id) pairs already emailed
+        // inside the dedup window. Filter on the candidate article ids only
+        // to keep the payload small.
+        const dedupCutoff = new Date(
+          Date.now() - DEDUP_WINDOW_DAYS * 24 * 60 * 60 * 1000,
+        ).toISOString();
+
+        const { data: sentRows, error: sentErr } = await supabase
+          .from("digest_sent_articles")
+          .select("article_id")
+          .eq("subscriber_id", sub.id)
+          .gt("sent_at", dedupCutoff)
+          .in("article_id", candidates.map((a) => a.id));
+
+        if (sentErr) {
+          console.warn(`Could not load dedup history for ${sub.email}: ${sentErr.message}. Proceeding without dedup.`);
+        }
+
+        const alreadySentIds = new Set(
+          (sentRows || []).map((r: { article_id: string }) => r.article_id),
+        );
+
+        const result = selectArticlesForDigest(candidates, alreadySentIds, {
+          targetSize: DIGEST_TARGET_SIZE,
+          minFloor: DIGEST_MIN_FLOOR,
+        });
+
+        if (result.kind === "skip") {
+          console.log(`Skipping ${sub.email}: ${result.articles.length} novel article(s) ` +
+            `(floor=${DIGEST_MIN_FLOOR}). Candidates=${result.stats.candidateCount}, ` +
+            `already-sent=${result.stats.alreadySentCount}.`);
+          skipped++;
+          continue;
+        }
+
+        if (result.articles.length < DIGEST_TARGET_SIZE) {
+          console.log(`Short digest for ${sub.email}: ${result.articles.length} articles ` +
+            `(target=${DIGEST_TARGET_SIZE}). Dedup removed ${result.stats.dedupRemoved} duplicates.`);
         }
 
         // Get their tickers for highlighting
@@ -117,7 +160,7 @@ Deno.serve(async (req: Request) => {
         const userTickers = (tickerRows || []).map((r: { ticker: string }) => r.ticker);
 
         // Build and send email
-        const html = renderDigestEmail(articles, userTickers, sub);
+        const html = renderDigestEmail(result.articles, userTickers, sub);
         const subject = `📊 Your morning brief — ${formatDate(new Date())}`;
 
         await sendEmail({ to: sub.email, subject, html, batchId });
@@ -126,7 +169,7 @@ Deno.serve(async (req: Request) => {
         // email URL pattern now encodes article_id + feed_token directly (see
         // docs/backlog/done/P3-simplify-email-link-tokens.md). The column is
         // scheduled for DROP in a future schema cleanup.
-        const sentRecords = articles.map(a => ({
+        const sentRecords = result.articles.map((a) => ({
           subscriber_id: sub.id,
           article_id: a.id,
           digest_batch: batchId,
@@ -143,7 +186,7 @@ Deno.serve(async (req: Request) => {
           .eq("id", sub.id);
 
         sent++;
-        console.log(`✓ Sent digest to ${sub.email} (${articles.length} articles, batch: ${batchId})`);
+        console.log(`✓ Sent digest to ${sub.email} (${result.articles.length} articles, batch: ${batchId})`);
       } catch (err) {
         failed++;
         const msg = err instanceof Error ? err.message : String(err);
@@ -152,7 +195,7 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    const result = { sent, failed, total: subscribers.length, errors };
+    const result = { sent, skipped, failed, total: subscribers.length, errors };
     console.log("Digest run complete:", JSON.stringify(result));
     return jsonResponse(result);
   } catch (err) {
@@ -166,14 +209,14 @@ Deno.serve(async (req: Request) => {
 
 async function getSubscriberArticles(
   supabase: ReturnType<typeof createClient>,
-  feedToken: string | null
+  feedToken: string | null,
 ): Promise<Article[]> {
   // Try the personalized feed RPC first (requires feed_token + user_interests)
   if (feedToken) {
     try {
       const { data, error } = await supabase.rpc("get_subscriber_feed", {
         p_token: feedToken,
-        p_limit: 8,
+        p_limit: CANDIDATE_POOL_SIZE,
       });
 
       if (!error && data && data.error !== "not_found") {
@@ -196,14 +239,17 @@ async function getSubscriberArticles(
     }
   }
 
-  // Fallback: fetch latest articles for subscribers with no feed_token or no interests
+  // Fallback: fetch latest articles for subscribers with no feed_token or no interests.
+  // `processing_status = 'complete'` prevents archived/failed articles from leaking
+  // through the fallback path (latent bug fix introduced in v13).
   console.log("Using fallback: fetching latest articles");
   const { data: latestArticles, error: latestError } = await supabase
     .from("ai_articles")
-    .select("id, headline, publication, published_at, ai_preview, consensus_signal, extracted_tickers, inference_watch")
+    .select("id, headline, publication, published_at, ai_preview, consensus_signal, extracted_tickers, inference_watch, processing_status")
+    .eq("processing_status", "complete")
     .gt("published_at", new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString())
     .order("published_at", { ascending: false })
-    .limit(8);
+    .limit(CANDIDATE_POOL_SIZE);
 
   if (latestError || !latestArticles) return [];
 

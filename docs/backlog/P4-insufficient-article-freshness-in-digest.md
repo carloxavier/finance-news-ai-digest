@@ -20,8 +20,9 @@ Two contributing factors:
    timezone-aware cron; subscribers in later timezones get
    deliveries 12+ hours after the last seed. Between seeds, new
    articles don't exist in the DB to select from.
-2. **`send-digest` recency filter is 30 days.** See
-   `supabase/functions/send-digest/index.ts:222`:
+2. **`send-digest` recency filter is 30 days.** In
+   `supabase/functions/send-digest/index.ts`, the fallback path
+   on `ai_articles` applies:
    `.gt("published_at", new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString())`
    The filter is so loose that if topic coverage is thin for a
    subscriber's interests, articles from 2–3 days ago rank into

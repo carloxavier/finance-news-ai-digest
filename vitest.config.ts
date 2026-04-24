@@ -12,7 +12,10 @@ export default defineConfig({
   test: {
     environment: 'happy-dom',
     globals: true,
-    include: ['src/**/*.test.{ts,tsx}'],
+    include: [
+      'src/**/*.test.{ts,tsx}',
+      'supabase/functions/**/*.test.ts',
+    ],
     setupFiles: ['./src/test-setup.ts'],
   },
 });

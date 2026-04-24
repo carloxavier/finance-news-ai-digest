@@ -62,6 +62,20 @@ All functions use `verify_jwt=false` (they are public endpoints used in email li
 
 ---
 
+## Pre-deploy gate
+
+Before deploying any Edge Function, run:
+
+```bash
+./scripts/pre-deploy-check.sh send-digest   # or the function you're about to deploy
+```
+
+This runs the tests colocated with that function. Non-zero exit code means DO NOT deploy. The GitHub Actions pipeline will catch anything that slips past, but locally verifying saves a round trip.
+
+If no tests exist for the function (e.g. `handle-unsubscribe` doesn't have a test file), the script prints a warning and exits 0. Add tests for non-trivial Edge Functions as they grow.
+
+---
+
 ## Deploying
 
 Deploy via Supabase MCP:
