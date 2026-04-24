@@ -139,3 +139,5 @@ Why next to the function rather than under `src/app/__tests__/`:
 The earlier `src/app/__tests__/digest-subscriber-flow.test.ts` pattern (re-implementing the Deno handler in Node) remains valid for handlers where the entire branching logic is I/O-bound and can't be meaningfully factored out. For `send-digest`, the dedup/selection logic was pure enough to extract, so the new pattern is the preferred one going forward.
 
 **Rule of thumb**: if an Edge Function contains a function that doesn't call Supabase, Resend, or any network, pull it into a sibling file and test it colocated. If the whole function is glue, use the contract-test pattern under `src/app/__tests__/`.
+
+The same `pre-deploy-check.sh <fn>` invocation also runs in `.github/workflows/deploy-edge-functions.yml` before each deploy, so failing tests block the deploy by construction.
