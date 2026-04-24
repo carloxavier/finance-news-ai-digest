@@ -71,9 +71,11 @@ Don't delete closed tickets — `done/` is the project's institutional memory fo
 - [P4 — normalize ticker → company name](./P4-normalize-ticker-company-names.md)
 - [P4 — stop rendering single-publication name](./P4-stop-rendering-single-publication-name.md)
 - [P4 — user_tickers ranking boost](./P4-user-tickers-ranking-boost.md)
+- [P4 — add contract tests for track-click](./P4-track-click-contract-tests.md)
 - [P5 — decide fate of news_sources table](./P5-decide-fate-of-news-sources.md)
 - [P5 — decide fate of stats_weekly_snapshots table](./P5-decide-fate-of-stats-weekly-snapshots.md)
 - [P5 — drop legacy brief column](./P5-drop-legacy-brief-column.md)
+- [P5 — replace uniform --no-verify-jwt flag with supabase/config.toml](./P5-edge-function-verify-jwt-config.md)
 - [P5 — rename misleading cron job archive-digest-sent](./P5-rename-archive-digest-sent-cron.md)
 - [P5 — secure welcome email + signup rate limiting](./P5-secure-welcome-and-signup-rate-limiting.md)
 
