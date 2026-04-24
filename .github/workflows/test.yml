@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 jobs:
-  test:
+  unit-tests:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,3 +24,46 @@ jobs:
 
       - name: Build (typecheck via Vite)
         run: npm run build
+
+  sql-tests:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      # The full schema is managed by Supabase, not by migrations in this repo
+      # (the migrations dir is incremental-only — no base CREATE TABLE for
+      # ai_articles, digest_subscribers, etc.). The SQL tests in
+      # supabase/functions/__tests__ exercise pure-arithmetic functions that
+      # don't depend on any table, so we apply only the function-creation
+      # migrations needed by the tests. If a future test exercises a table-
+      # bound function, add a base-schema bootstrap step here.
+      - name: Apply function-only migrations to test DB
+        env:
+          PGPASSWORD: postgres
+        run: |
+          for f in supabase/migrations/*calculate_relevance*.sql; do
+            echo "→ Applying $f"
+            psql -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 -f "$f"
+          done
+
+      - name: Run SQL tests
+        env:
+          PGPASSWORD: postgres
+        run: |
+          for f in supabase/functions/__tests__/*_test.sql; do
+            echo "→ Running $f"
+            psql -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 -f "$f"
+          done

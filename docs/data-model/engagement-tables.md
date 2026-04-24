@@ -80,3 +80,41 @@ Originally a beta-waitlist capture for a hypothetical in-product "AI agent" feat
 **Read by**: no frontend consumer today. Analytics only.
 
 **Eventual cleanup**: the table name still says "waitlist" while the content is mostly click events. If the mismatch becomes a read-path confusion source, split: new `ai_click_intents` table for the click events, keep `ai_agent_waitlist` for any future actual waitlist. For now we tolerate the overload — schema churn costs more than the ambiguity.
+
+## `subscriber_tickers`
+
+Tickers a subscriber has chosen to follow. Consumed by
+`get_subscriber_feed` to boost the personal-dimension `ticker_match`
+component of the relevance score.
+
+| Column | Type | Nullable | Default | Purpose |
+|---|---|---|---|---|
+| `subscriber_id` | uuid | NO | — | FK → `digest_subscribers.id`. **CASCADE** on delete. Composite PK with `ticker`. |
+| `ticker` | text | NO | — | Ticker symbol (e.g. `'AAPL'`). Stored without prefix; `get_subscriber_feed` joins by prepending `'TICKER:'` to match `ai_articles.primary_entities`. Composite PK with `subscriber_id`. |
+| `created_at` | timestamptz | NO | `now()` | When the follow was created. |
+
+**RLS**: subscribers can SELECT their own rows (matched via
+`digest_subscribers.user_id = auth.uid()`). The service role manages
+all rows. There is no anon-write path.
+
+**Status**: empty in v1. The onboarding/dashboard UX that populates it
+is a separate follow-up PR. The relevance ranker handles empty
+gracefully — `ticker_match` degrades to 0 for every subscriber until
+rows are added.
+
+## `ticker_cap_tier`
+
+Static lookup of ticker → market-cap tier. Used by
+`get_subscriber_feed` to weight each article's market-dimension score:
+mega-cap stories get 1.0, large 0.7, mid 0.4, small/unknown 0.2.
+
+| Column | Type | Nullable | Default | Purpose |
+|---|---|---|---|---|
+| `ticker` | text | NO | — | PK. Ticker symbol (e.g. `'AAPL'`). |
+| `tier` | text | NO | — | Enum-like (CHECK constraint): `'mega'`, `'large'`, `'mid'`, `'small'`. |
+
+**Maintenance**: hand-curated, world-readable, no RLS. Initial seed
+covers ~50 mega-caps and ~50 large-caps. Tickers not present in this
+table fall back to `'small'` weighting in the RPC. Rebalance ~quarterly,
+or after a meaningful market-cap shift (e.g. a name moving from large
+to mega). See backlog for "expand cap tier coverage to ~500 via Tiingo".

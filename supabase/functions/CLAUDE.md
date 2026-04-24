@@ -51,3 +51,25 @@ deploy` remain available as break-glass when GitHub Actions is down,
 but they should not be the first choice.
 
 The git source of truth is this directory.
+
+## `send-digest` and the relevance ranker
+
+As of the digest-relevance-ranking-v1 migrations (April 2026),
+`get_subscriber_feed` returns articles already ordered by a
+three-dimension relevance score (personal × market × temporal). The
+LLM-tagged inputs (`story_magnitude`, `story_type`, `primary_entities`)
+live on `ai_articles`; the arithmetic lives in the
+`calculate_relevance` SQL function.
+
+`send-digest`'s `selection.ts` does **not** need changes for ranking.
+It receives an already-ranked candidate pool from the RPC and applies
+only its dedup + truncate-to-target logic on top. Article ordering in
+the email matches RPC order.
+
+If you find yourself thinking about "how should the digest rank
+articles?" — that decision lives in the SQL (the RPC + the seeder's
+magnitude tagging), not here.
+
+See `docs/design/digest-relevance-ranking.md` for the formula
+rationale and `supabase/functions/__tests__/calculate_relevance_test.sql`
+for the scoring-function unit tests.

@@ -175,3 +175,20 @@ Where it's NOT needed / should stay relative:
 - Frontend links/navigation. `routes.ts` uses `basename: '/'` and the Vite `base` is `/`. All in-app routing is relative (`/article/:id`, `/feed`, etc.).
 
 **Ideally** `SITE_BASE_URL` would be read from a Supabase secret so a future domain change is a single secret update, not a code change across three files. See the backlog.
+
+### Digest relevance ranking (v14+)
+
+`get_subscriber_feed` no longer sorts by recency. Each article is scored
+on three dimensions:
+
+- **Personal** (topic match + ticker match, 0.1–1.5 range)
+- **Market** (cap tier × story_magnitude/5, 0.04–1.0 range)
+- **Temporal** (exponential decay, half-life varies by story_type)
+
+The score is computed by the `calculate_relevance` pure SQL function
+called inline in the RPC. Fuzzy inputs (magnitude, story type, entity
+extraction) are LLM-tagged by the seeder at write time and persisted
+as columns on `ai_articles`. SQL only does the arithmetic.
+
+See `docs/design/digest-relevance-ranking.md` for the formula rationale
+and the three-dimension framework.
