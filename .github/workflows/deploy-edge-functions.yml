@@ -110,6 +110,11 @@ jobs:
       - name: Deploy ${{ matrix.function }}
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        # All current functions run with verify_jwt=false — they are
+        # public endpoints (cron-triggered jobs, email-link redirects,
+        # Resend webhooks). If a future function needs JWT verification,
+        # do NOT rely on this uniform flag: add a per-function block to
+        # supabase/config.toml and drop --no-verify-jwt here.
         run: |
           supabase functions deploy ${{ matrix.function }} \
             --project-ref kamfamwjswkncftsdgxi \
