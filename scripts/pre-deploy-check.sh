@@ -9,9 +9,44 @@ set -euo pipefail
 
 FN="${1:-}"
 
+run_sql_tests() {
+  local SQL_TEST_DIR="supabase/functions/__tests__"
+  if [[ ! -d "$SQL_TEST_DIR" ]]; then
+    echo "  (no SQL test directory — skipping)"
+    return 0
+  fi
+
+  local count
+  count=$(find "$SQL_TEST_DIR" -name "*_test.sql" | wc -l | tr -d ' ')
+  if [[ "$count" == "0" ]]; then
+    echo "  (no SQL test files — skipping)"
+    return 0
+  fi
+
+  if ! command -v psql &>/dev/null; then
+    echo "⚠  psql not found — skipping SQL tests"
+    return 0
+  fi
+
+  # Check if local Supabase is running and reachable
+  local LOCAL_DB="postgresql://postgres:postgres@localhost:54322/postgres"
+  if ! psql "$LOCAL_DB" -c '\q' 2>/dev/null; then
+    echo "⚠  Local Supabase DB not reachable at :54322 — skipping SQL tests."
+    echo "   Run 'supabase start' to enable them."
+    return 0
+  fi
+
+  echo "→ Running $count SQL test file(s) against local Supabase"
+  local file
+  for file in "$SQL_TEST_DIR"/*_test.sql; do
+    psql "$LOCAL_DB" -f "$file" -v ON_ERROR_STOP=1
+  done
+}
+
 if [[ -z "$FN" ]]; then
   echo "→ Running full test suite (no function specified)"
   npm test
+  run_sql_tests
 else
   TEST_DIR="supabase/functions/$FN"
   if [[ ! -d "$TEST_DIR" ]]; then
@@ -23,11 +58,12 @@ else
   if [[ "$TEST_FILES" == "0" ]]; then
     echo "⚠  No test files found in $TEST_DIR — deploying without pre-flight tests."
     echo "   Consider adding a *.test.ts file alongside the Edge Function."
-    exit 0
+  else
+    echo "→ Running $TEST_FILES test file(s) for $FN"
+    npx vitest run "$TEST_DIR"
   fi
 
-  echo "→ Running $TEST_FILES test file(s) for $FN"
-  npx vitest run "$TEST_DIR"
+  run_sql_tests
 fi
 
 echo "✓ Pre-deploy checks passed"
