@@ -90,7 +90,7 @@ BEGIN
               a.published_at, a.consensus_signal, a.extracted_tickers,
               a.inference_watch,
               calculate_relevance(
-                a.story_magnitude,
+                a.story_magnitude::integer,
                 -- Market: max() across primary_entities. Missing ticker
                 -- defaults to 0.2 (small-cap). Macro entities get 0.9.
                 COALESCE((
@@ -192,7 +192,7 @@ BEGIN
               a.published_at, a.consensus_signal, a.extracted_tickers,
               a.inference_watch,
               calculate_relevance(
-                a.story_magnitude,
+                a.story_magnitude::integer,
                 COALESCE((
                   SELECT MAX(
                     CASE
