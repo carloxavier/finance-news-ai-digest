@@ -43,10 +43,31 @@ run_sql_tests() {
   done
 }
 
+# Advisory: warn if there are uncommitted changes under supabase/migrations/.
+# The migrations auto-deploy workflow applies every committed file in the
+# directory on the next push to main, so uncommitted edits here matter.
+check_pending_migrations() {
+  local MIGRATIONS_DIR="supabase/migrations"
+  if [[ ! -d "$MIGRATIONS_DIR" ]]; then
+    return 0
+  fi
+
+  local UNCOMMITTED
+  UNCOMMITTED=$(git status --porcelain "$MIGRATIONS_DIR" 2>/dev/null | wc -l | tr -d ' ')
+
+  if [[ "$UNCOMMITTED" != "0" ]]; then
+    echo "⚠  $UNCOMMITTED uncommitted file(s) in $MIGRATIONS_DIR"
+    echo "   Review before pushing. The deploy-migrations workflow will apply"
+    echo "   all committed migration files on the next main-branch push."
+    git status --short "$MIGRATIONS_DIR"
+  fi
+}
+
 if [[ -z "$FN" ]]; then
   echo "→ Running full test suite (no function specified)"
   npm test
   run_sql_tests
+  check_pending_migrations
 else
   TEST_DIR="supabase/functions/$FN"
   if [[ ! -d "$TEST_DIR" ]]; then
@@ -64,6 +85,7 @@ else
   fi
 
   run_sql_tests
+  check_pending_migrations
 fi
 
 echo "✓ Pre-deploy checks passed"

@@ -1,0 +1,46 @@
+name: Deploy Migrations
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/migrations/**'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Only print the plan, do not apply"
+        type: boolean
+        default: false
+
+concurrency:
+  group: deploy-migrations-prod
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      PROJECT_ID: kamfamwjswkncftsdgxi
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Link project
+        run: supabase link --project-ref "$PROJECT_ID"
+
+      - name: Dry-run (show pending migrations)
+        run: supabase migration list --linked
+
+      - name: Apply migrations
+        if: ${{ !inputs.dry_run }}
+        run: supabase db push --linked
+
+      - name: Post-apply verification
+        if: ${{ !inputs.dry_run }}
+        run: supabase migration list --linked

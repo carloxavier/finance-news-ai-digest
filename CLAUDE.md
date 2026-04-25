@@ -29,6 +29,7 @@ When a task involves these topics, load the matching doc(s) before acting:
 | High-level system diagram, deployment, email-to-app flow | [`docs/architecture.md`](./docs/architecture.md) |
 | RPC response shapes, how the frontend talks to Supabase | [`docs/supabase-rpc.md`](./docs/supabase-rpc.md) |
 | Deploying / testing Edge Functions, known pitfalls | [`docs/deploy-edge-functions.md`](./docs/deploy-edge-functions.md) |
+| Deploying Supabase migrations (CI workflow, break-glass paths) | [`docs/deploy-migrations.md`](./docs/deploy-migrations.md) |
 | **Database schema** — tables, columns, enums, FK cascade rules | [`docs/data-model/`](./docs/data-model/README.md) |
 | Article `processing_status` state machine + feed RPCs | [`docs/data-model/article-lifecycle.md`](./docs/data-model/article-lifecycle.md) |
 | JSONB shapes, enum cheat sheet, FK cascade map | [`docs/data-model/references.md`](./docs/data-model/references.md) |
