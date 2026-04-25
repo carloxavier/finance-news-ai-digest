@@ -34,6 +34,7 @@ When a task involves these topics, load the matching doc(s) before acting:
 | Article `processing_status` state machine + feed RPCs | [`docs/data-model/article-lifecycle.md`](./docs/data-model/article-lifecycle.md) |
 | JSONB shapes, enum cheat sheet, FK cascade map | [`docs/data-model/references.md`](./docs/data-model/references.md) |
 | Testing strategy (unit / smoke / contract layers) | [`docs/testing.md`](./docs/testing.md) |
+| Seeder skill pipeline + three-layer dedup model | [`docs/seeder.md`](./docs/seeder.md) (skill source kept locally at `~/Documents/Finnopolis/Skills/finance-ai-digest-seeder/`, not in this repo) |
 | Deferred work (P3/P4/P5 tickets) | [`docs/backlog/`](./docs/backlog/README.md) |
 | Core coding rules, invariants, what to test | [`guidelines/Guidelines.md`](./guidelines/Guidelines.md) |
 
