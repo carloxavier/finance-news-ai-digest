@@ -1,7 +1,16 @@
 {
   "permissions": {
     "allow": [
+      "Bash",
       "Bash(find '/Users/carloxavierlopez/Downloads/Financial News Feed App' -type d -not -path */node_modules*)"
+    ],
+    "deny": [
+      "Bash(sudo *)",
+      "Bash(rm -rf /)",
+      "Bash(rm -rf /*)",
+      "Bash(rm -rf ~)",
+      "Bash(rm -rf ~/)",
+      "Bash(rm -rf ~/*)"
     ]
   }
 }
